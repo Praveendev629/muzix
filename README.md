@@ -13,7 +13,7 @@ controls.
 
 ---
 
-## ✨ Features
+## ✨ 
 
 | Area | Details |
 |------|---------|
