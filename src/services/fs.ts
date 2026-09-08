@@ -42,6 +42,7 @@ export function managedFileExists(name: string): boolean {
   return new File(musicDirectory(), name).exists;
 }
 
+
 /** Read a bounded slice (bytes) of a local file for metadata parsing. */
 export async function readHead(fileUri: string, bytes = 768 * 1024): Promise<Uint8Array> {
   try {
@@ -93,40 +94,4 @@ export async function clearManagedMusic() {
   }
 }
 
-/** Read a bounded slice (bytes) of a local file for metadata parsing. */
-export async function readHead(fileUri: string, bytes = 768 * 1024): Promise<Uint8Array> {
-  try {
-    const f = new File(fileUri);
-    if (!f.exists) return new Uint8Array(0);
-    const size = f.size ?? 0;
-    const buf = await f.slice(0, Math.min(bytes, size)).arrayBuffer();
-    return new Uint8Array(buf);
-  } catch {
-    return new Uint8Array(0);
-  }
-}
 
-/** Read the final slice (bytes) of a local file (used for trailing moov atoms). */
-export async function readTail(fileUri: string, bytes = 768 * 1024): Promise<Uint8Array> {
-  try {
-    const f = new File(fileUri);
-    if (!f.exists) return new Uint8Array(0);
-    const size = f.size ?? 0;
-    if (size <= bytes) return readHead(fileUri, size);
-    const buf = await f.slice(size - bytes, size).arrayBuffer();
-    return new Uint8Array(buf);
-  } catch {
-    return new Uint8Array(0);
-  }
-}
-
-export async function writeArtwork(artData: Uint8Array, name: string): Promise<string | null> {
-  try {
-    const dir = artworkDirectory();
-    const f = new File(dir, name);
-    if (!f.exists) f.write(artData);
-    return f.uri;
-  } catch {
-    return null;
-  }
-}
