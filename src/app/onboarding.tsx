@@ -35,9 +35,17 @@ export default function Onboarding() {
   };
 
   const finish = async () => {
-    await applySettings({ onboardingDone: true });
-    await requestAudioPermission();
+    // Navigate first so the main UI always appears, even if persisting the
+    // setting or the permission dialog misbehaves.
+    try {
+      await applySettings({ onboardingDone: true });
+    } catch {
+      // Ignore — worst case onboarding shows again next launch.
+    }
     router.replace('/(tabs)');
+    // Fire the permission request after navigating; the system dialog appears
+    // over the home screen and can never block navigation.
+    requestAudioPermission().catch(() => {});
   };
 
   return (

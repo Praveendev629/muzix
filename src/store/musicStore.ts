@@ -94,20 +94,34 @@ export const useMusicStore = create<MusicState>((set, get) => ({
 
   init: async () => {
     if (get().initialized) return;
-    await Audio.ensureSetup();
-    if (!listenersBound) {
-      listenersBound = true;
-      bindListeners();
+    // Audio setup must never block the UI: ensureSetup has its own timeout,
+    // and this is wrapped so an unexpected failure can't stall startup.
+    try {
+      await Audio.ensureSetup();
+    } catch {
+      // Ignored — playback calls retry internally; the app must still open.
     }
-    const [settings, equalizer, playlists, searchHistory, notifications] = await Promise.all([
-      DB.getSettings(),
-      DB.getEqualizer(),
-      DB.getPlaylists(),
-      DB.getSearchHistory(),
-      DB.getNotifications(),
-    ]);
-    set({ settings, equalizer, playlists, searchHistory, notifications });
-    await get().refreshLibrary();
+    try {
+      if (!listenersBound) {
+        listenersBound = true;
+        bindListeners();
+      }
+      const [settings, equalizer, playlists, searchHistory, notifications] = await Promise.all([
+        DB.getSettings(),
+        DB.getEqualizer(),
+        DB.getPlaylists(),
+        DB.getSearchHistory(),
+        DB.getNotifications(),
+      ]);
+      set({ settings, equalizer, playlists, searchHistory, notifications });
+    } catch {
+      // Keep defaults if the local DB is unavailable; never stall the UI.
+    }
+    try {
+      await get().refreshLibrary();
+    } catch {
+      // Library can stay empty; the user can rescan from the UI.
+    }
     set({ initialized: true });
   },
 

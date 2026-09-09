@@ -10,47 +10,76 @@ import TrackPlayer, {
   Capability,
   RepeatMode,
   State,
+  Event,
   IOSCategory,
   IOSCategoryMode,
   AppKilledPlaybackBehavior,
 } from 'react-native-track-player';
 import type { Song } from '@/types/music';
 
+const SETUP_TIMEOUT_MS = 6000;
+
 let setupStarted = false;
 let ready = false;
+
+/** Resolves with the promise result, or rejects after `ms` if it never settles. */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('timed out')), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      }
+    );
+  });
+}
 
 export async function ensureSetup(): Promise<void> {
   if (ready) return;
   if (setupStarted) {
-    while (!ready) {
+    // Bounded wait so a stuck setup can never block callers forever.
+    let waited = 0;
+    while (!ready && waited < SETUP_TIMEOUT_MS) {
       await new Promise((r) => setTimeout(r, 60));
+      waited += 60;
     }
     return;
   }
   setupStarted = true;
   try {
-    await TrackPlayer.setupPlayer({
-      iosCategory: IOSCategory.Playback,
-      iosCategoryMode: IOSCategoryMode.Default,
-      autoHandleInterruptions: true,
-    });
-    await TrackPlayer.updateOptions({
-      capabilities: [
-        Capability.Play,
-        Capability.Pause,
-        Capability.SkipToNext,
-        Capability.SkipToPrevious,
-        Capability.SeekTo,
-        Capability.JumpForward,
-        Capability.JumpBackward,
-        Capability.Stop,
-      ],
-      compactCapabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext, Capability.SkipToPrevious],
-      android: {
-        appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
-      },
-      progressUpdateEventInterval: 0.5,
-    });
+    await withTimeout(
+      TrackPlayer.setupPlayer({
+        iosCategory: IOSCategory.Playback,
+        iosCategoryMode: IOSCategoryMode.Default,
+        autoHandleInterruptions: true,
+      }),
+      SETUP_TIMEOUT_MS
+    );
+    await withTimeout(
+      TrackPlayer.updateOptions({
+        capabilities: [
+          Capability.Play,
+          Capability.Pause,
+          Capability.SkipToNext,
+          Capability.SkipToPrevious,
+          Capability.SeekTo,
+          Capability.JumpForward,
+          Capability.JumpBackward,
+          Capability.Stop,
+        ],
+        compactCapabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext, Capability.SkipToPrevious],
+        android: {
+          appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
+        },
+        progressUpdateEventInterval: 0.5,
+      }),
+      SETUP_TIMEOUT_MS
+    );
     ready = true;
   } catch (e) {
     ready = true;
@@ -164,4 +193,4 @@ export async function getState(): Promise<State> {
   }
 }
 
-export { TrackPlayer, State, RepeatMode };
+export { TrackPlayer, State, RepeatMode, Event };
