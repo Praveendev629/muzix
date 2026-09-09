@@ -657,3 +657,57 @@ index b2409a0..36fe799 100644
 +        }
      }
  }
+diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
+index afa6b0f..2c47f74 100644
+--- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
++++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
+@@ -31,6 +31,7 @@ import com.doublesymmetry.trackplayer.utils.BundleUtils
+ import com.doublesymmetry.trackplayer.utils.BundleUtils.setRating
+ import com.facebook.react.HeadlessJsTaskService
+ import com.facebook.react.bridge.Arguments
++import com.facebook.react.bridge.ReactContext
+ import com.facebook.react.jstasks.HeadlessJsTaskConfig
+ import com.facebook.react.modules.core.DeviceEventManagerModule
+ import com.google.android.exoplayer2.ui.R as ExoPlayerR
+@@ -741,21 +742,37 @@ class MusicService : HeadlessJsTaskService() {
+ 
+     @MainThread
+     private fun emit(event: String, data: Bundle? = null) {
+-        reactNativeHost.reactInstanceManager.currentReactContext
+-            ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
++        val context = currentReactContextCompat() ?: return
++        context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+             ?.emit(event, data?.let { Arguments.fromBundle(it) })
+     }
+ 
+     @MainThread
+     private fun emitList(event: String, data: List<Bundle> = emptyList()) {
++        val context = currentReactContextCompat() ?: return
+         val payload = Arguments.createArray()
+         data.forEach { payload.pushMap(Arguments.fromBundle(it)) }
+ 
+-        reactNativeHost.reactInstanceManager.currentReactContext
+-            ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
++        context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+             ?.emit(event, payload)
+     }
+ 
++    /**
++     * Returns the current ReactContext on both the legacy (bridge) and the
++     * bridgeless (New Architecture) setups. Accessing reactNativeHost throws
++     * a RuntimeException on bridgeless React Native (0.8x+), so prefer
++     * reactHost there and only fall back to the legacy accessor when needed.
++     */
++    private fun currentReactContextCompat(): ReactContext? {
++        return try {
++            reactHost?.currentReactContext
++                ?: reactNativeHost.reactInstanceManager.currentReactContext
++        } catch (e: RuntimeException) {
++            // reactNativeHost throws on bridgeless; reactHost already covered that case.
++            null
++        }
++    }
++
+     override fun getTaskConfig(intent: Intent?): HeadlessJsTaskConfig {
+         return HeadlessJsTaskConfig(TASK_KEY, Arguments.createMap(), 0, true)
+     }
