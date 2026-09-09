@@ -9,7 +9,6 @@ const ICONS: Record<string, { active: IconName; inactive: IconName; label: strin
   index: { active: 'home', inactive: 'home-outline', label: 'Home' },
   search: { active: 'search', inactive: 'search-outline', label: 'Search' },
   library: { active: 'library', inactive: 'library-outline', label: 'Library' },
-  profile: { active: 'person', inactive: 'person-outline', label: 'Profile' },
 };
 
 export default function BottomTabBar({ state, descriptors, navigation }: any) {

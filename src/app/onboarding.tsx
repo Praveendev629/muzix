@@ -6,7 +6,7 @@ import * as Haptics from 'expo-haptics';
 import GlowButton from '@/components/GlowButton';
 import Icon, { type IconName } from '@/components/Icon';
 import Watermark from '@/components/Watermark';
-import { requestAudioPermission } from '@/services/scanner';
+import { requestAudioPermission } from '@/services/library';
 import { useMusicStore } from '@/store/musicStore';
 import { Colors, Font, Gradients, Radius } from '@/constants/theme';
 

@@ -9,7 +9,7 @@ import Artwork from '@/components/Artwork';
 import SectionHeader from '@/components/SectionHeader';
 import EmptyState from '@/components/EmptyState';
 import { useMusicStore, albumsOf } from '@/store/musicStore';
-import { hasAudioPermission, requestAudioPermission } from '@/services/scanner';
+import { hasAudioPermission, requestAudioPermission } from '@/services/library';
 import { Colors, Font, Gradients, Radius } from '@/constants/theme';
 import type { Song } from '@/types/music';
 
@@ -70,10 +70,6 @@ export default function HomeScreen() {
               </View>
             </View>
             <View style={styles.headerRight}>
-              <Pressable onPress={() => router.push('/notifications')} style={styles.iconBtn} accessibilityLabel="Notifications">
-                <Icon name="notifications-outline" size={22} color={Colors.text} />
-                {notifCount > 0 ? <View style={styles.badge} /> : null}
-              </Pressable>
               <Pressable onPress={() => router.push('/settings')} style={styles.iconBtn} accessibilityLabel="Settings">
                 <Icon name="settings-outline" size={22} color={Colors.text} />
               </Pressable>

@@ -68,12 +68,20 @@ export default function LibraryScreen() {
         <Text style={styles.playlistName}>{item.name}</Text>
         <Text style={styles.sub}>{item.songIds.length} songs</Text>
       </View>
-      <Icon name="ellipsis-horizontal" size={18} color={Colors.textSecondary} onPress={() => setMenuPlaylist(item)} />
+      <Pressable onPress={() => setMenuPlaylist(item)}>
+        <Icon name="ellipsis-horizontal" size={18} color={Colors.textSecondary} />
+      </Pressable>
     </Pressable>
   );
 
   return (
     <Screen showWatermark>
+      <View style={styles.header}>
+        <Text style={styles.title}>Library</Text>
+        <Pressable onPress={() => router.push('/settings')} style={styles.iconBtn} accessibilityLabel="Settings">
+          <Icon name="settings-outline" size={22} color={Colors.text} />
+        </Pressable>
+      </View>
       <View style={styles.tabs}>
         {TABS.map((t) => {
           const active = tab === t.key;
@@ -205,6 +213,9 @@ function TextInputModal({ visible, title, placeholder, value, onChangeText, onCa
 }
 
 const styles = StyleSheet.create({
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 10 },
+  title: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold },
+  iconBtn: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.card },
   tabs: { flexDirection: 'row', gap: 8, paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12 },
   tab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: Radius.pill, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border },
   tabActive: { backgroundColor: Colors.purple, borderColor: Colors.borderStrong },

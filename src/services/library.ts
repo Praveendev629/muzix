@@ -1,9 +1,9 @@
 import { Query, MediaType, AssetField, requestPermissionsAsync, getPermissionsAsync } from 'expo-media-library';
-import { File } from 'expo-file-system';
 import * as DB from '@/services/database';
 import * as Fs from '@/services/fs';
 import { extractMetadata, supportedExtension, cleanTag } from '@/services/metadata';
 import type { Song } from '@/types/music';
+import type { DocumentPickerAsset } from 'expo-document-picker';
 
 export interface ScanResult {
   added: number;
@@ -135,7 +135,7 @@ export async function scanDeviceLibrary(onProgress?: (done: number, total: numbe
 
 /** Import files selected through the system document picker. */
 export async function importFromPicker(
-  picked: File[],
+  picked: DocumentPickerAsset[],
   onProgress?: (done: number, total: number) => void
 ): Promise<ScanResult> {
   const result: ScanResult = { added: 0, updated: 0, skipped: 0, failed: 0 };

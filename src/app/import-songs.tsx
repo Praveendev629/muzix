@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { File } from 'expo-file-system';
+import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
 import Icon from '@/components/Icon';
 import Screen from '@/components/Screen';
 import NeonCard from '@/components/NeonCard';
 import GlowButton from '@/components/GlowButton';
 import EmptyState from '@/components/EmptyState';
-import { hasAudioPermission, requestAudioPermission, importFromPicker, scanDeviceLibrary } from '@/services/scanner';
+import { hasAudioPermission, requestAudioPermission, importFromPicker, scanDeviceLibrary } from '@/services/library';
 import { useMusicStore } from '@/store/musicStore';
 import { Colors, Font } from '@/constants/theme';
 
@@ -31,11 +31,14 @@ export default function ImportScreen() {
 
   const pickFiles = async () => {
     try {
-      const res = await File.pickFileAsync({ multipleFiles: true, mimeTypes: 'audio/*' });
-      if (res.canceled || !res.result) return;
+      const res = await DocumentPicker.getDocumentAsync({
+        type: ['audio/*'],
+        multiple: true,
+      });
+      if (res.canceled || !res.assets || res.assets.length === 0) return;
       setWorking(true);
-      setProgress(`Importing 0 / ${res.result.length}`);
-      const result = await importFromPicker(res.result, (done, total) => setProgress(`Importing ${done} / ${total}`));
+      setProgress(`Importing 0 / ${res.assets.length}`);
+      const result = await importFromPicker(res.assets, (done, total) => setProgress(`Importing ${done} / ${total}`));
       setWorking(false);
       await refreshLibrary();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

@@ -37,13 +37,18 @@ export default function SearchScreen() {
 
   return (
     <Screen showWatermark>
-      <View style={styles.searchRow}>
-        <View style={styles.field}>
-          <Icon name="search" size={18} color={Colors.textSecondary} />
-          <TextInput value={query} onChangeText={setQuery} placeholder="Search songs, artists, albums..." placeholderTextColor={Colors.textMuted} style={styles.input} onSubmitEditing={submit} returnKeyType="search" autoCorrect={false} />
-          {query.length > 0 ? <Icon name="close-circle" size={18} color={Colors.textSecondary} onPress={() => setQuery('')} /> : null}
+      <View style={styles.header}>
+        <View style={styles.searchRow}>
+          <View style={styles.field}>
+            <Icon name="search" size={18} color={Colors.textSecondary} />
+            <TextInput value={query} onChangeText={setQuery} placeholder="Search songs, artists, albums..." placeholderTextColor={Colors.textMuted} style={styles.input} onSubmitEditing={submit} returnKeyType="search" autoCorrect={false} />
+            {query.length > 0 ? <Pressable onPress={() => setQuery('')}><Icon name="close-circle" size={18} color={Colors.textSecondary} /></Pressable> : null}
+          </View>
+          {query.length > 0 ? <Text style={styles.cancel} onPress={() => setQuery('')}>Cancel</Text> : null}
         </View>
-        {query.length > 0 ? <Text style={styles.cancel} onPress={() => setQuery('')}>Cancel</Text> : null}
+        <Pressable onPress={() => router.push('/settings')} style={styles.iconBtn} accessibilityLabel="Settings">
+          <Icon name="settings-outline" size={22} color={Colors.text} />
+        </Pressable>
       </View>
 
       {query.trim() ? (
@@ -114,10 +119,12 @@ export default function SearchScreen() {
 }
 
 const styles = StyleSheet.create({
-  searchRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingVertical: 10 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingVertical: 10 },
+  searchRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   field: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, height: 46, borderRadius: Radius.md, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border },
   input: { flex: 1, color: Colors.text, fontSize: Font.size.md, paddingVertical: 0 },
   cancel: { color: Colors.pink, fontSize: Font.size.md, fontWeight: Font.weight.semibold },
+  iconBtn: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.card },
   content: { paddingBottom: 40 },
   noResults: { color: Colors.textSecondary, fontSize: Font.size.sm, paddingHorizontal: 20, paddingBottom: 12 },
   resultRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 10 },

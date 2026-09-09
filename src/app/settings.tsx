@@ -6,7 +6,7 @@ import Screen from '@/components/Screen';
 import NeonCard from '@/components/NeonCard';
 import Watermark from '@/components/Watermark';
 import { useMusicStore } from '@/store/musicStore';
-import { scanDeviceLibrary } from '@/services/scanner';
+import { scanDeviceLibrary } from '@/services/library';
 import { getStats } from '@/services/database';
 import { Colors, Font, Radius } from '@/constants/theme';
 

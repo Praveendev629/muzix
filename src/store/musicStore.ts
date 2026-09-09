@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Event, RepeatMode, State, TrackPlayer } from '@/services/audio';
 import * as Audio from '@/services/audio';
 import * as DB from '@/services/database';
+import { seedSampleLibrary } from '@/services/library';
 import type {
   AppNotification,
   AppSettings,
@@ -119,6 +120,12 @@ export const useMusicStore = create<MusicState>((set, get) => ({
     }
     try {
       await get().refreshLibrary();
+      // Seed sample library if no songs exist
+      const currentSongs = get().songs;
+      if (currentSongs.length === 0) {
+        await seedSampleLibrary();
+        await get().refreshLibrary();
+      }
     } catch {
       // Library can stay empty; the user can rescan from the UI.
     }
