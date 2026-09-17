@@ -1,7 +1,6 @@
 services:
   - type: web
     name: muzix-ytdl
-    runtime: node
     plan: free
     dockerfilePath: ./Dockerfile
     envVars:
