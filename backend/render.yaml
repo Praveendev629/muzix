@@ -3,8 +3,7 @@ services:
     name: muzix-ytdl
     runtime: node
     plan: free
-    buildCommand: apt-get update && apt-get install -y python3 ffmpeg curl && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && chmod a+rx /usr/local/bin/yt-dlp && npm install
-    startCommand: node server.js
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: NODE_ENV
         value: production
