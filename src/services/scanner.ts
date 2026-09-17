@@ -98,13 +98,16 @@ export async function scanDeviceLibrary(
     const asset = assets[i];
     onProgress?.(i + 1, assets.length);
     try {
-      const uri = await asset.getUri();
-      const name = (await asset.getFilename()) || `track-${i}`;
+      const uri = typeof asset.getUri === 'function' ? await asset.getUri() : (asset.uri || '');
+      const name = typeof asset.getFilename === 'function'
+        ? (await asset.getFilename()) || `track-${i}`
+        : (asset.filename || `track-${i}`);
       if (!supportedExtension(name)) {
         result.skipped++;
         continue;
       }
-      const id = `dev_${hashCode(asset.id)}${extOf(name)}`;
+      const assetId = asset.id || String(i);
+      const id = `dev_${hashCode(assetId)}${extOf(name)}`;
       if (known.has(id)) {
         result.skipped++;
         continue;
@@ -118,7 +121,9 @@ export async function scanDeviceLibrary(
           continue;
         }
       }
-      const duration = ((await asset.getDuration()) || 0) / 1000;
+      const duration = typeof asset.getDuration === 'function'
+        ? ((await asset.getDuration()) || 0) / 1000
+        : (typeof asset.duration === 'number' ? asset.duration / 1000 : 0);
       const tags = await extractMetadata(fileUri, name);
       const song = buildSong(id, fileUri, name, duration, tags);
       await persistArtwork(song, tags?.artwork);

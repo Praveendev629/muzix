@@ -56,10 +56,27 @@ export interface SearchHistoryEntry {
   at: number;
 }
 
+export type ThemeName = 'dark' | 'light' | 'system' | 'custom';
+export type AccentName = 'purplePink' | 'bluePurple' | 'redPurple' | 'custom';
+
+/** User-defined base colors that derive a fully custom dark/light scheme. */
+export interface CustomThemeSettings {
+  bg: string;
+  card: string;
+  text: string;
+}
+
+/** A single user-chosen base hue; the four neon shades are derived from it. */
+export interface CustomAccentSettings {
+  base: string;
+}
+
 export interface AppSettings {
   name: string; // greeting name
-  theme: 'dark' | 'light' | 'system';
-  accent: 'purplePink' | 'bluePurple' | 'redPurple';
+  theme: ThemeName;
+  accent: AccentName;
+  customTheme: CustomThemeSettings | null;
+  customAccent: CustomAccentSettings | null;
   showNotifications: boolean;
   showArtwork: boolean;
   showMediaControls: boolean;
@@ -91,6 +108,12 @@ export interface AppNotification {
   title: string;
   body: string;
   at: number;
+}
+
+export interface LyricsSnapshot {
+  synced: string | null;
+  plain: string | null;
+  source: string;
 }
 
 export interface QueueItem {

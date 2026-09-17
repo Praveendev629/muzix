@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>POToken</title>
+<script>
+(function() {
+  const REQUEST_KEY = 'O43z0dpjhgX20SCx4KAo';
+  const WAA_API_KEY = 'AIzaSyDyT5W0Jh49F30Pqqtyfdf7pDLFKLJoAnw';
+
+  let minter = null;
+  let visitorData = null;
+  let ready = false;
+
+  function postMessage(type, data) {
+    if (window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type, ...data }));
+    }
+  }
+
+  async function fetchChallenge() {
+    const res = await fetch('https://jnn-pa.googleapis.com/$rpc/google.internal.waa.v1.Waa/GetChallenge', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json+protobuf',
+        'x-goog-api-key': WAA_API_KEY,
+        'x-user-agent': 'grpc-web-javascript/0.1',
+      },
+      body: JSON.stringify([REQUEST_KEY, visitorData || '']),
+    });
+    if (!res.ok) throw new Error('Challenge fetch failed: ' + res.status);
+    return res.json();
+  }
+
+  async function generateIT(botguardResponse) {
+    const res = await fetch('https://jnn-pa.googleapis.com/$rpc/google.internal.waa.v1.Waa/GenerateIT', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json+protobuf',
+        'x-goog-api-key': WAA_API_KEY,
+        'x-user-agent': 'grpc-web-javascript/0.1',
+      },
+      body: JSON.stringify([REQUEST_KEY, botguardResponse]),
+    });
+    if (!res.ok) throw new Error('GenerateIT failed: ' + res.status);
+    return res.json();
+  }
+
+  function u8ToBase64(u8, websafe) {
+    let b64 = '';
+    const bytes = websafe ? new Uint8Array(u8) : u8;
+    for (let i = 0; i < bytes.length; i++) {
+      b64 += String.fromCharCode(bytes[i]);
+    }
+    let result = btoa(b64);
+    if (websafe) {
+      result = result.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+    return result;
+  }
+
+  function base64ToU8(b64) {
+    const padded = b64.replace(/-/g, '+').replace(/_/g, '/');
+    while (padded.length % 4) padded += '=';
+    const bin = atob(padded);
+    const u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    return u8;
+  }
+
+  async function initBotGuard() {
+    try {
+      postMessage('status', { message: 'Fetching visitor data...' });
+
+      // Step 1: Get visitor data from YouTube
+      const pageRes = await fetch('https://www.youtube.com/', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+        },
+      });
+      const pageHtml = await pageRes.text();
+      const vdMatch = pageHtml.match(/"VISITOR_DATA":"([^"]+)"/);
+      visitorData = vdMatch ? vdMatch[1] : '';
+
+      postMessage('status', { message: 'Got visitor data, fetching challenge...' });
+
+      // Step 2: Get BotGuard challenge
+      const challenge = await fetchChallenge();
+      const interpreterJs = challenge[3]?.privateDoNotAccessOrElseSafeScriptWrappedValue;
+      const program = challenge[1];
+      const globalName = challenge[2];
+
+      if (!interpreterJs || !program || !globalName) {
+        throw new Error('Invalid challenge response');
+      }
+
+      postMessage('status', { message: 'Running BotGuard...' });
+
+      // Step 3: Execute interpreter
+      if (!document.getElementById('bg-interpreter')) {
+        const script = document.createElement('script');
+        script.id = 'bg-interpreter';
+        script.type = 'text/javascript';
+        script.textContent = interpreterJs;
+        document.head.appendChild(script);
+      }
+
+      // Step 4: Create BotGuard client and snapshot
+      const vm = window[globalName];
+      if (!vm) throw new Error('VM not found: ' + globalName);
+
+      const webPoSignalOutput = [];
+      const bgResponse = await new Promise((resolve, reject) => {
+        vm.asyncSnapshotFunction((response) => {
+          if (response) resolve(response);
+          else reject(new Error('Snapshot failed'));
+        }, [undefined, undefined, webPoSignalOutput, undefined]);
+      });
+
+      postMessage('status', { message: 'Getting integrity token...' });
+
+      // Step 5: Get integrity token
+      const itResponse = await generateIT(bgResponse);
+      const integrityToken = itResponse[0];
+
+      if (!integrityToken) throw new Error('No integrity token');
+
+      // Step 6: Create minter
+      const getMinter = webPoSignalOutput[0];
+      if (!getMinter) throw new Error('No minter function');
+
+      const mintCallback = await getMinter(base64ToU8(integrityToken));
+      if (!(mintCallback instanceof Function)) throw new Error('Invalid mint callback');
+
+      minter = mintCallback;
+      ready = true;
+
+      postMessage('ready', { visitorData: visitorData });
+      console.log('[POToken] Ready, visitorData:', visitorData?.substring(0, 30));
+    } catch (e) {
+      postMessage('error', { message: e.message || String(e) });
+      console.error('[POToken] Init error:', e);
+    }
+  }
+
+  async function mintToken(videoId) {
+    if (!ready || !minter) {
+      postMessage('error', { message: 'Not ready', requestId: videoId });
+      return;
+    }
+    try {
+      const result = await minter(new TextEncoder().encode(videoId));
+      if (!result) throw new Error('Mint returned null');
+      const poToken = u8ToBase64(result, true);
+      postMessage('token', { poToken, videoId });
+      console.log('[POToken] Minted for:', videoId);
+    } catch (e) {
+      postMessage('error', { message: e.message || String(e), requestId: videoId });
+      console.error('[POToken] Mint error:', e);
+    }
+  }
+
+  window.addEventListener('message', function(e) {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'mint' && msg.videoId) {
+        mintToken(msg.videoId);
+      }
+    } catch {}
+  });
+
+  // Start initialization
+  initBotGuard();
+})();
+</script>
+</head>
+<body></body>
+</html>

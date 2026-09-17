@@ -1,27 +1,61 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Icon, { type IconName } from '@/components/Icon';
 import Screen from '@/components/Screen';
 import NeonCard from '@/components/NeonCard';
 import Watermark from '@/components/Watermark';
+import ColorPickerModal from '@/components/ColorPickerModal';
 import { useMusicStore } from '@/store/musicStore';
 import { scanDeviceLibrary } from '@/services/library';
 import { getStats } from '@/services/database';
-import { Colors, Font, Radius } from '@/constants/theme';
+import { Font, Radius, useTheme } from '@/constants/theme';
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const SKIPS = [5, 10, 15, 30];
-const THEMES = ['dark', 'light', 'system'] as const;
-const ACCENTS = ['purplePink', 'bluePurple', 'redPurple'] as const;
+const THEMES = ['dark', 'light', 'system', 'custom'] as const;
+const ACCENTS = ['purplePink', 'bluePurple', 'redPurple', 'custom'] as const;
+
+const useStyles = () => {
+  const { Colors } = useTheme();
+  return useMemo(
+    () =>
+      StyleSheet.create({
+        header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10 },
+        backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+        title: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold },
+        content: { padding: 16, paddingBottom: 40 },
+        section: { marginBottom: 20 },
+        sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, paddingHorizontal: 4 },
+        sectionTitle: { color: Colors.textSecondary, fontSize: Font.size.sm, fontWeight: Font.weight.bold, textTransform: 'uppercase', letterSpacing: 1 },
+        sectionCard: { paddingHorizontal: 16 },
+        row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13, gap: 12 },
+        linkRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13, gap: 12 },
+        label: { color: Colors.text, fontSize: Font.size.md, fontWeight: Font.weight.medium, flexShrink: 1 },
+        danger: { color: Colors.danger },
+        input: { backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.sm, color: Colors.text, paddingHorizontal: 12, height: 38, fontSize: Font.size.md, minWidth: 140 },
+        linkValue: { color: Colors.textSecondary, fontSize: Font.size.sm },
+        segment: { flexDirection: 'row', backgroundColor: Colors.card, borderRadius: Radius.sm, borderWidth: 1, borderColor: Colors.border, overflow: 'hidden' },
+        segmentBtn: { paddingHorizontal: 12, paddingVertical: 8 },
+        segmentActive: { backgroundColor: Colors.purple },
+        segmentText: { color: Colors.textSecondary, fontSize: Font.size.sm, fontWeight: Font.weight.semibold },
+        segmentTextActive: { color: Colors.white },
+        about: { color: Colors.textSecondary, fontSize: Font.size.sm, lineHeight: 20, paddingVertical: 10 },
+      }),
+    [Colors],
+  );
+};
 
 export default function SettingsScreen() {
+  const { Colors } = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const settings = useMusicStore((s) => s.settings);
   const applySettings = useMusicStore((s) => s.applySettings);
   const refreshLibrary = useMusicStore((s) => s.refreshLibrary);
   const [stats, setStats] = useState({ songs: 0, albums: 0, artists: 0 });
   const [scanning, setScanning] = useState(false);
+  const [palette, setPalette] = useState<'theme' | 'accent' | null>(null);
 
   React.useEffect(() => {
     getStats().then(setStats);
@@ -29,10 +63,73 @@ export default function SettingsScreen() {
 
   const scan = async () => {
     setScanning(true);
-    const result = await scanDeviceLibrary();
+    let result;
+    try {
+      result = await scanDeviceLibrary();
+    } catch (e: any) {
+      setScanning(false);
+      Alert.alert('Scan failed', e?.message ?? 'Please try again.');
+      return;
+    }
     setScanning(false);
     await refreshLibrary();
     Alert.alert('Scan complete', `${result.added} added, ${result.skipped} skipped, ${result.failed} failed.`);
+  };
+
+  const themeTokens = useMemo(
+    () => [
+      { key: 'bg', label: 'Background', color: settings.customTheme?.bg ?? Colors.bg },
+      { key: 'card', label: 'Cards', color: settings.customTheme?.card ?? Colors.card },
+      { key: 'text', label: 'Text', color: settings.customTheme?.text ?? Colors.text },
+    ],
+    [settings.customTheme, Colors],
+  );
+
+  const accentTokens = useMemo(
+    () => [{ key: 'base', label: 'Accent', color: settings.customAccent?.base ?? Colors.purple }],
+    [settings.customAccent, Colors],
+  );
+
+  const selectTheme = (v: string) => {
+    if (v === 'custom') {
+      // Custom colours only apply once the user picks them in the palette.
+      setPalette('theme');
+      return;
+    }
+    applySettings({ theme: v as typeof settings.theme });
+  };
+
+  const selectAccent = (v: string) => {
+    if (v === 'custom') {
+      setPalette('accent');
+      return;
+    }
+    applySettings({ accent: v as typeof settings.accent });
+  };
+
+  const restoreDefaults = () => {
+    Alert.alert('Restore default theme?', 'This resets theme and accent colours to the app defaults.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Restore',
+        style: 'destructive',
+        onPress: () =>
+          applySettings({
+            theme: 'dark',
+            accent: 'purplePink',
+            customTheme: null,
+            customAccent: null,
+          }),
+      },
+    ]);
+  };
+
+  const onPaletteApply = (colors: Record<string, string>) => {
+    if (palette === 'theme') {
+      applySettings({ theme: 'custom', customTheme: { bg: colors.bg, card: colors.card, text: colors.text } });
+    } else if (palette === 'accent') {
+      applySettings({ accent: 'custom', customAccent: { base: colors.base } });
+    }
   };
 
   return (
@@ -51,12 +148,18 @@ export default function SettingsScreen() {
           </Row>
           <Row>
             <Label>Theme</Label>
-            <Segmented options={THEMES} value={settings.theme} onSelect={(v) => applySettings({ theme: v })} labels={{ dark: 'Dark', light: 'Light', system: 'System' }} />
+            <Segmented options={THEMES} value={settings.theme} onSelect={selectTheme} labels={{ dark: 'Dark', light: 'Light', system: 'System', custom: 'Custom' }} />
           </Row>
           <Row>
             <Label>Accent</Label>
-            <Segmented options={ACCENTS} value={settings.accent} onSelect={(v) => applySettings({ accent: v })} labels={{ purplePink: 'Purple', bluePurple: 'Blue', redPurple: 'Red' }} />
+            <Segmented options={ACCENTS} value={settings.accent} onSelect={selectAccent} labels={{ purplePink: 'Purple', bluePurple: 'Blue', redPurple: 'Red', custom: 'Custom' }} />
           </Row>
+          {(settings.theme === 'custom' || settings.accent === 'custom') && (
+            <Pressable style={styles.linkRow} onPress={restoreDefaults} accessibilityLabel="Restore default theme">
+              <Label style={{ color: Colors.danger }}>Restore default theme & colours</Label>
+              <Icon name="refresh" size={18} color={Colors.danger} />
+            </Pressable>
+          )}
         </Section>
 
         <Section title="Playback" icon="play-circle">
@@ -127,11 +230,24 @@ export default function SettingsScreen() {
 
         <Watermark style={{ marginTop: 12 }} />
       </ScrollView>
+
+      <ColorPickerModal
+        visible={palette !== null}
+        title={palette === 'accent' ? 'Custom accent color' : 'Custom theme colors'}
+        kind={palette ?? 'theme'}
+        tokens={palette === 'accent' ? accentTokens : themeTokens}
+        settings={settings}
+        onApply={onPaletteApply}
+        onRestoreDefaults={restoreDefaults}
+        onClose={() => setPalette(null)}
+      />
     </Screen>
   );
 }
 
 function Section({ title, icon, children }: { title: string; icon: IconName; children: React.ReactNode }) {
+  const { Colors } = useTheme();
+  const styles = useStyles();
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
@@ -144,14 +260,18 @@ function Section({ title, icon, children }: { title: string; icon: IconName; chi
 }
 
 function Row({ children }: { children: React.ReactNode }) {
+  const styles = useStyles();
   return <View style={styles.row}>{children}</View>;
 }
 
 function Label({ children, style }: { children: React.ReactNode; style?: any }) {
+  const styles = useStyles();
   return <Text style={[styles.label, style]}>{children}</Text>;
 }
 
 function SwitchRow({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+  const { Colors } = useTheme();
+  const styles = useStyles();
   return (
     <View style={styles.row}>
       <Label>{label}</Label>
@@ -161,6 +281,7 @@ function SwitchRow({ label, value, onChange }: { label: string; value: boolean; 
 }
 
 function Segmented<T extends string | number>({ options, value, onSelect, labels }: { options: readonly T[]; value: T; onSelect: (v: T) => void; labels: Record<string, string> }) {
+  const styles = useStyles();
   return (
     <View style={styles.segment}>
       {options.map((o) => (
@@ -171,26 +292,3 @@ function Segmented<T extends string | number>({ options, value, onSelect, labels
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10 },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  title: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold },
-  content: { padding: 16, paddingBottom: 40 },
-  section: { marginBottom: 20 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, paddingHorizontal: 4 },
-  sectionTitle: { color: Colors.textSecondary, fontSize: Font.size.sm, fontWeight: Font.weight.bold, textTransform: 'uppercase', letterSpacing: 1 },
-  sectionCard: { paddingHorizontal: 16 },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13, gap: 12 },
-  linkRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13, gap: 12 },
-  label: { color: Colors.text, fontSize: Font.size.md, fontWeight: Font.weight.medium, flexShrink: 1 },
-  danger: { color: Colors.danger },
-  input: { backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.sm, color: Colors.text, paddingHorizontal: 12, height: 38, fontSize: Font.size.md, minWidth: 140 },
-  linkValue: { color: Colors.textSecondary, fontSize: Font.size.sm },
-  segment: { flexDirection: 'row', backgroundColor: Colors.card, borderRadius: Radius.sm, borderWidth: 1, borderColor: Colors.border, overflow: 'hidden' },
-  segmentBtn: { paddingHorizontal: 12, paddingVertical: 8 },
-  segmentActive: { backgroundColor: Colors.purple },
-  segmentText: { color: Colors.textSecondary, fontSize: Font.size.sm, fontWeight: Font.weight.semibold },
-  segmentTextActive: { color: Colors.white },
-  about: { color: Colors.textSecondary, fontSize: Font.size.sm, lineHeight: 20, paddingVertical: 10 },
-});

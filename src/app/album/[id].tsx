@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Icon from '@/components/Icon';
@@ -7,9 +7,29 @@ import Artwork from '@/components/Artwork';
 import SongRow from '@/components/SongRow';
 import EmptyState from '@/components/EmptyState';
 import { useMusicStore, albumsOf } from '@/store/musicStore';
-import { Colors, Font } from '@/constants/theme';
+import { Font, useTheme } from '@/constants/theme';
+
+const useStyles = () => {
+  const { Colors } = useTheme();
+  return useMemo(
+    () =>
+      StyleSheet.create({
+        header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10 },
+        backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+        title: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold, flex: 1, textAlign: 'center' },
+        content: { paddingBottom: 40 },
+        hero: { alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20 },
+        heroTitle: { color: Colors.text, fontSize: Font.size.xl, fontWeight: Font.weight.extrabold, marginTop: 18, textAlign: 'center' },
+        heroSub: { color: Colors.textSecondary, fontSize: Font.size.sm, marginTop: 6 },
+        playBtn: { marginTop: 18, width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.purple },
+      }),
+    [Colors],
+  );
+};
 
 export default function AlbumScreen() {
+  const { Colors } = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const songs = useMusicStore((s) => s.songs);
@@ -45,20 +65,9 @@ export default function AlbumScreen() {
             <Pressable onPress={() => playSongs(album.songs, 0)} style={styles.playBtn} accessibilityLabel="Play album"><Icon name="play" size={22} color={Colors.white} /></Pressable>
           </View>
         }
-        renderItem={({ item }) => <SongRow song={item} active={activeSong?.id === item.id} />}
+        renderItem={({ item }) => <SongRow song={item} onPress={(song) => { const idx = album.songs.findIndex((s) => s.id === song.id); playSongs(album.songs, idx); }} active={activeSong?.id === item.id} />}
         contentContainerStyle={styles.content}
       />
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10 },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  title: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold, flex: 1, textAlign: 'center' },
-  content: { paddingBottom: 40 },
-  hero: { alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20 },
-  heroTitle: { color: Colors.text, fontSize: Font.size.xl, fontWeight: Font.weight.extrabold, marginTop: 18, textAlign: 'center' },
-  heroSub: { color: Colors.textSecondary, fontSize: Font.size.sm, marginTop: 6 },
-  playBtn: { marginTop: 18, width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.purple },
-});

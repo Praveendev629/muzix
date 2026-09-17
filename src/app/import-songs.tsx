@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
@@ -8,11 +8,34 @@ import Screen from '@/components/Screen';
 import NeonCard from '@/components/NeonCard';
 import GlowButton from '@/components/GlowButton';
 import EmptyState from '@/components/EmptyState';
-import { hasAudioPermission, requestAudioPermission, importFromPicker, scanDeviceLibrary } from '@/services/library';
+import { hasAudioPermission, requestAudioPermission, importFromPicker, scanDeviceLibrary, type ScanResult } from '@/services/library';
 import { useMusicStore } from '@/store/musicStore';
-import { Colors, Font } from '@/constants/theme';
+import { Font, useTheme } from '@/constants/theme';
+
+const useStyles = () => {
+  const { Colors } = useTheme();
+  return useMemo(
+    () =>
+      StyleSheet.create({
+        header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10 },
+        backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+        title: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold },
+        content: { padding: 20, paddingBottom: 40 },
+        libraryCount: { color: Colors.textSecondary, fontSize: Font.size.md, textAlign: 'center', marginBottom: 20 },
+        card: { padding: 20, marginBottom: 16, alignItems: 'center' },
+        cardTitle: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold, marginTop: 12 },
+        cardBody: { color: Colors.textSecondary, fontSize: Font.size.sm, textAlign: 'center', lineHeight: 20, marginTop: 8 },
+        btn: { marginTop: 18, alignSelf: 'stretch' },
+        progressRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 12 },
+        progressText: { color: Colors.pink, fontSize: Font.size.sm, fontWeight: Font.weight.semibold },
+      }),
+    [Colors],
+  );
+};
 
 export default function ImportScreen() {
+  const { Colors } = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const refreshLibrary = useMusicStore((s) => s.refreshLibrary);
   const songs = useMusicStore((s) => s.songs);
@@ -30,6 +53,7 @@ export default function ImportScreen() {
   };
 
   const pickFiles = async () => {
+    let result: ScanResult;
     try {
       const res = await DocumentPicker.getDocumentAsync({
         type: ['audio/*'],
@@ -38,25 +62,45 @@ export default function ImportScreen() {
       if (res.canceled || !res.assets || res.assets.length === 0) return;
       setWorking(true);
       setProgress(`Importing 0 / ${res.assets.length}`);
-      const result = await importFromPicker(res.assets, (done, total) => setProgress(`Importing ${done} / ${total}`));
+      result = await importFromPicker(res.assets, (done, total) => setProgress(`Importing ${done} / ${total}`));
+    } catch (e: any) {
       setWorking(false);
+      setProgress(e?.message ? `Import failed: ${e.message}` : 'Import failed. Please try again.');
+      return;
+    }
+    setWorking(false);
+    try {
       await refreshLibrary();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setProgress(`${result.added} songs added to your library`);
-      if (result.added > 0) router.replace('/(tabs)/library');
     } catch {
-      setWorking(false);
-      setProgress('Import failed. Please try again.');
+      // Refresh is best-effort; the songs are already in the DB.
     }
+    setProgress(`${result.added} songs added to your library`);
+    if (result.added > 0) router.replace('/(tabs)/library');
   };
 
   const scanDevice = async () => {
+    let result: ScanResult;
     setWorking(true);
     setProgress('Scanning device for audio...');
-    const result = await scanDeviceLibrary((d, t) => setProgress(`Scanning ${d} / ${t}`));
+    try {
+      result = await scanDeviceLibrary((d, t) => setProgress(`Scanning ${d} / ${t}`));
+    } catch (e: any) {
+      setWorking(false);
+      setProgress(e?.message ? `Scan failed: ${e.message}` : 'Scan failed. Please try again.');
+      return;
+    }
     setWorking(false);
-    await refreshLibrary();
-    setProgress(`Scan complete: ${result.added} added, ${result.skipped} skipped.`);
+    try {
+      await refreshLibrary();
+    } catch {
+      // Refresh is best-effort.
+    }
+    setProgress(
+      `Scan complete: ${result.added} added, ${result.updated} updated, ${result.failed} failed, ${result.skipped} skipped` +
+        (result.duplicate > 0 ? ` (${result.duplicate} already in library)` : '') +
+        (result.unsupported > 0 ? ` (${result.unsupported} unsupported format)` : '')
+    );
   };
 
   if (!granted) {
@@ -107,17 +151,3 @@ export default function ImportScreen() {
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10 },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  title: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold },
-  content: { padding: 20, paddingBottom: 40 },
-  libraryCount: { color: Colors.textSecondary, fontSize: Font.size.md, textAlign: 'center', marginBottom: 20 },
-  card: { padding: 20, marginBottom: 16, alignItems: 'center' },
-  cardTitle: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold, marginTop: 12 },
-  cardBody: { color: Colors.textSecondary, fontSize: Font.size.sm, textAlign: 'center', lineHeight: 20, marginTop: 8 },
-  btn: { marginTop: 18, alignSelf: 'stretch' },
-  progressRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 12 },
-  progressText: { color: Colors.pink, fontSize: Font.size.sm, fontWeight: Font.weight.semibold },
-});

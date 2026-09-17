@@ -1,19 +1,24 @@
-import { Tabs } from 'expo-router';
 import React from 'react';
+import { View } from 'react-native';
 import BottomTabBar from '@/components/BottomTabBar';
+import PagerTabs from '@/components/PagerTabs';
+import { useMusicStore } from '@/store/musicStore';
+import HomeScreen from './index';
+import SearchScreen from './search';
+import LibraryScreen from './library';
 
 export default function TabsLayout() {
+  const tabIndex = useMusicStore((s) => s.tabIndex);
+  const setTab = useMusicStore((s) => s.setTab);
+
   return (
-    <Tabs
-      tabBar={(props) => <BottomTabBar {...props} />}
-      screenOptions={{ 
-        headerShown: false, 
-        sceneStyle: { backgroundColor: '#05030A' },
-      }}
-    >
-      <Tabs.Screen name="index" options={{ title: 'Home' }} />
-      <Tabs.Screen name="search" options={{ title: 'Search' }} />
-      <Tabs.Screen name="library" options={{ title: 'Library' }} />
-    </Tabs>
+    <View style={{ flex: 1, backgroundColor: '#05030A' }}>
+      <PagerTabs
+        index={tabIndex}
+        onChange={setTab}
+        pages={[<HomeScreen key="home" />, <SearchScreen key="search" />, <LibraryScreen key="library" />]}
+      />
+      <BottomTabBar />
+    </View>
   );
 }

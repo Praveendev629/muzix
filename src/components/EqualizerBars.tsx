@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, View, type ViewStyle } from 'react-native';
-import { Colors } from '@/constants/theme';
+import { useTheme } from '@/constants/theme';
 
 interface EqualizerBarsProps {
   active?: boolean;
@@ -10,8 +10,10 @@ interface EqualizerBarsProps {
 }
 
 /** Animated equalizer bars to indicate the currently playing track. */
-export default function EqualizerBars({ active = true, size = 16, color = Colors.pink, style }: EqualizerBarsProps) {
+export default function EqualizerBars({ active = true, size = 16, color, style }: EqualizerBarsProps) {
+  const { Colors } = useTheme();
   const anims = useRef([0, 1, 2, 3].map(() => new Animated.Value(0.4))).current;
+  const barColor = color ?? Colors.pink;
 
   useEffect(() => {
     if (!active) {
@@ -44,7 +46,7 @@ export default function EqualizerBars({ active = true, size = 16, color = Colors
             height: size,
             marginHorizontal: barGap / 2,
             borderRadius: barW / 2,
-            backgroundColor: color,
+            backgroundColor: barColor,
             transform: [{ scaleY: a }],
             opacity: active ? 1 : 0.35,
           }}

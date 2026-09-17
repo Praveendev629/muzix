@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Icon from '@/components/Icon';
 import Screen from '@/components/Screen';
@@ -8,7 +8,7 @@ import SongRow from '@/components/SongRow';
 import EmptyState from '@/components/EmptyState';
 import GlowButton from '@/components/GlowButton';
 import { useMusicStore, albumsOf, artistsOf } from '@/store/musicStore';
-import { Colors, Font, Radius } from '@/constants/theme';
+import { Font, Radius, useTheme } from '@/constants/theme';
 import type { Playlist, Song } from '@/types/music';
 
 type Tab = 'playlists' | 'songs' | 'artists' | 'albums';
@@ -19,7 +19,50 @@ const TABS: { key: Tab; label: string; icon: any }[] = [
   { key: 'albums', label: 'Albums', icon: 'albums' },
 ];
 
+const useStyles = () => {
+  const { Colors } = useTheme();
+  return useMemo(
+    () =>
+      StyleSheet.create({
+        header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 10 },
+        title: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold },
+        iconBtn: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.card },
+        tabsScroll: { flexGrow: 0, flexShrink: 0, height: 72 },
+        tabs: { flexDirection: 'row', gap: 8, paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12 },
+        tab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: Radius.pill, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border },
+        tabActive: { backgroundColor: Colors.purple, borderColor: Colors.borderStrong },
+        tabText: { color: Colors.textSecondary, fontSize: Font.size.sm, fontWeight: Font.weight.semibold },
+        tabTextActive: { color: Colors.white },
+        listContent: { paddingBottom: 120 },
+        likedRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, marginHorizontal: 20, marginBottom: 10, borderRadius: Radius.md, backgroundColor: 'rgba(255,20,147,0.10)', borderWidth: 1, borderColor: Colors.borderStrong },
+        likedIcon: { width: 54, height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.pink },
+        playlistRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 10 },
+        playlistName: { color: Colors.text, fontSize: Font.size.md, fontWeight: Font.weight.semibold },
+        sub: { color: Colors.textSecondary, fontSize: Font.size.sm, marginTop: 2 },
+        artistAvatar: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(123,44,255,0.16)', borderWidth: 1, borderColor: Colors.border },
+        fabWrap: { position: 'absolute', bottom: 24, left: 20, right: 20 },
+        fab: {},
+        backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+        sheet: { backgroundColor: Colors.cardElevated, borderTopLeftRadius: Radius.xl, borderTopRightRadius: Radius.xl, borderWidth: 1, borderColor: Colors.border, paddingTop: 16, paddingBottom: 40 },
+        sheetTitle: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold, paddingHorizontal: 20, paddingBottom: 12 },
+        sheetItem: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 15 },
+        sheetLabel: { color: Colors.text, fontSize: Font.size.md, fontWeight: Font.weight.medium },
+        center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.6)', padding: 30 },
+        dialog: { alignSelf: 'stretch', backgroundColor: Colors.cardElevated, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.border, padding: 20 },
+        dialogTitle: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold, marginBottom: 16 },
+        input: { backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md, color: Colors.text, paddingHorizontal: 14, height: 46, fontSize: Font.size.md },
+        dialogActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 20 },
+        dialogBtn: { paddingHorizontal: 16, paddingVertical: 10 },
+        dialogCancel: { color: Colors.textSecondary, fontWeight: Font.weight.semibold },
+        dialogConfirm: { color: Colors.pink, fontWeight: Font.weight.bold },
+      }),
+    [Colors],
+  );
+};
+
 export default function LibraryScreen() {
+  const { Colors } = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const songs = useMusicStore((s) => s.songs);
   const playlists = useMusicStore((s) => s.playlists);
@@ -28,10 +71,11 @@ export default function LibraryScreen() {
   const renamePlaylist = useMusicStore((s) => s.renamePlaylist);
   const playSongs = useMusicStore((s) => s.playSongs);
   const activeSong = useMusicStore((s) => s.activeSong);
-  const [tab, setTab] = useState<Tab>('playlists');
+  const [tab, setTabLocal] = useState<Tab>('playlists');
   const [menuPlaylist, setMenuPlaylist] = useState<Playlist | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameName, setRenameName] = useState('');
+  const [renameId, setRenameId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState('');
 
@@ -49,9 +93,9 @@ export default function LibraryScreen() {
   };
 
   const confirmRename = async () => {
-    if (!menuPlaylist) return;
+    if (!renameId) return;
     const name = renameName.trim();
-    if (name) await renamePlaylist(menuPlaylist.id, name);
+    if (name) await renamePlaylist(renameId, name);
     setRenameOpen(false);
   };
 
@@ -62,7 +106,11 @@ export default function LibraryScreen() {
   };
 
   const renderPlaylist = ({ item }: { item: Playlist }) => (
-    <Pressable style={styles.playlistRow} onPress={() => router.push(`/playlist/${encodeURIComponent(item.id)}`)}>
+    <Pressable
+      style={styles.playlistRow}
+      onPress={() => router.push(`/playlist/${encodeURIComponent(item.id)}`)}
+      onLongPress={() => setMenuPlaylist(item)}
+    >
       <Artwork artwork={item.artwork} seed={item.name} size={54} radius={16} iconSize={22} />
       <View style={{ flex: 1 }}>
         <Text style={styles.playlistName}>{item.name}</Text>
@@ -74,6 +122,8 @@ export default function LibraryScreen() {
     </Pressable>
   );
 
+  const { width } = useWindowDimensions();
+
   return (
     <Screen showWatermark>
       <View style={styles.header}>
@@ -82,17 +132,22 @@ export default function LibraryScreen() {
           <Icon name="settings-outline" size={22} color={Colors.text} />
         </Pressable>
       </View>
-      <View style={styles.tabs}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={[styles.tabsScroll, { width }]}
+        contentContainerStyle={styles.tabs}
+      >
         {TABS.map((t) => {
           const active = tab === t.key;
           return (
-            <Pressable key={t.key} style={[styles.tab, active && styles.tabActive]} onPress={() => setTab(t.key)}>
+            <Pressable key={t.key} style={[styles.tab, active && styles.tabActive]} onPress={() => setTabLocal(t.key)}>
               <Icon name={t.icon} size={16} color={active ? Colors.white : Colors.textSecondary} />
               <Text style={[styles.tabText, active && styles.tabTextActive]}>{t.label}</Text>
             </Pressable>
           );
         })}
-      </View>
+      </ScrollView>
 
       {tab === 'playlists' && (
         <FlatList
@@ -174,7 +229,7 @@ export default function LibraryScreen() {
             <Text style={styles.sheetTitle}>{menuPlaylist?.name}</Text>
             <SheetItem icon="play" label="Play" onPress={() => { if (menuPlaylist) playPlaylist(menuPlaylist); setMenuPlaylist(null); }} />
             <SheetItem icon="shuffle" label="Shuffle play" onPress={() => { if (menuPlaylist) playPlaylist(menuPlaylist, true); setMenuPlaylist(null); }} />
-            <SheetItem icon="create" label="Rename" onPress={() => { if (menuPlaylist) { setRenameName(menuPlaylist.name); setRenameOpen(true); } setMenuPlaylist(null); }} />
+            <SheetItem icon="create" label="Rename" onPress={() => { if (menuPlaylist) { setRenameName(menuPlaylist.name); setRenameId(menuPlaylist.id); setRenameOpen(true); } setMenuPlaylist(null); }} />
             <SheetItem icon="trash" label="Delete playlist" destructive onPress={() => { if (menuPlaylist) deletePlaylist(menuPlaylist.id); setMenuPlaylist(null); }} />
           </Pressable>
         </Pressable>
@@ -187,6 +242,8 @@ export default function LibraryScreen() {
 }
 
 function SheetItem({ icon, label, onPress, destructive }: { icon: any; label: string; onPress: () => void; destructive?: boolean }) {
+  const { Colors } = useTheme();
+  const styles = useStyles();
   return (
     <Pressable style={styles.sheetItem} onPress={onPress}>
       <Icon name={icon} size={20} color={destructive ? Colors.danger : Colors.textSecondary} />
@@ -196,6 +253,8 @@ function SheetItem({ icon, label, onPress, destructive }: { icon: any; label: st
 }
 
 function TextInputModal({ visible, title, placeholder, value, onChangeText, onCancel, onConfirm }: { visible: boolean; title: string; placeholder: string; value: string; onChangeText: (t: string) => void; onCancel: () => void; onConfirm: () => void }) {
+  const { Colors } = useTheme();
+  const styles = useStyles();
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
       <View style={styles.center}>
@@ -211,36 +270,3 @@ function TextInputModal({ visible, title, placeholder, value, onChangeText, onCa
     </Modal>
   );
 }
-
-const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 10 },
-  title: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold },
-  iconBtn: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.card },
-  tabs: { flexDirection: 'row', gap: 8, paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12 },
-  tab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: Radius.pill, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border },
-  tabActive: { backgroundColor: Colors.purple, borderColor: Colors.borderStrong },
-  tabText: { color: Colors.textSecondary, fontSize: Font.size.sm, fontWeight: Font.weight.semibold },
-  tabTextActive: { color: Colors.white },
-  listContent: { paddingBottom: 120 },
-  likedRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, marginHorizontal: 20, marginBottom: 10, borderRadius: Radius.md, backgroundColor: 'rgba(255,20,147,0.10)', borderWidth: 1, borderColor: Colors.borderStrong },
-  likedIcon: { width: 54, height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.pink },
-  playlistRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 10 },
-  playlistName: { color: Colors.text, fontSize: Font.size.md, fontWeight: Font.weight.semibold },
-  sub: { color: Colors.textSecondary, fontSize: Font.size.sm, marginTop: 2 },
-  artistAvatar: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(123,44,255,0.16)', borderWidth: 1, borderColor: Colors.border },
-  fabWrap: { position: 'absolute', bottom: 24, left: 20, right: 20 },
-  fab: {},
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: Colors.cardElevated, borderTopLeftRadius: Radius.xl, borderTopRightRadius: Radius.xl, borderWidth: 1, borderColor: Colors.border, paddingTop: 16, paddingBottom: 40 },
-  sheetTitle: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold, paddingHorizontal: 20, paddingBottom: 12 },
-  sheetItem: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 15 },
-  sheetLabel: { color: Colors.text, fontSize: Font.size.md, fontWeight: Font.weight.medium },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.6)', padding: 30 },
-  dialog: { alignSelf: 'stretch', backgroundColor: Colors.cardElevated, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.border, padding: 20 },
-  dialogTitle: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold, marginBottom: 16 },
-  input: { backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md, color: Colors.text, paddingHorizontal: 14, height: 46, fontSize: Font.size.md },
-  dialogActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 20 },
-  dialogBtn: { paddingHorizontal: 16, paddingVertical: 10 },
-  dialogCancel: { color: Colors.textSecondary, fontWeight: Font.weight.semibold },
-  dialogConfirm: { color: Colors.pink, fontWeight: Font.weight.bold },
-});

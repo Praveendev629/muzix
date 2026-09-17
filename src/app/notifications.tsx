@@ -1,19 +1,11 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Icon, { type IconName } from '@/components/Icon';
 import Screen from '@/components/Screen';
 import { addNotification, clearNotifications, getNotifications } from '@/services/database';
 import { useMusicStore } from '@/store/musicStore';
-import { Colors, Font } from '@/constants/theme';
-
-const TYPE_META: Record<string, { icon: IconName; color: string }> = {
-  now_playing: { icon: 'musical-notes', color: Colors.pink },
-  playlist_updated: { icon: 'albums', color: Colors.purpleBright },
-  import_complete: { icon: 'download', color: Colors.purple },
-  new_release: { icon: 'sparkles', color: Colors.red },
-  system: { icon: 'information-circle', color: Colors.textSecondary },
-};
+import { Font, useTheme } from '@/constants/theme';
 
 function timeAgo(at: number) {
   const diff = Date.now() - at;
@@ -26,7 +18,35 @@ function timeAgo(at: number) {
   return `${d}d`;
 }
 
+const useStyles = () => {
+  const { Colors } = useTheme();
+  return useMemo(
+    () =>
+      StyleSheet.create({
+        header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10 },
+        backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+        title: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold },
+        content: { paddingVertical: 10 },
+        row: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.border },
+        iconWrap: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+        rowTitle: { color: Colors.text, fontSize: Font.size.md, fontWeight: Font.weight.semibold },
+        rowBody: { color: Colors.textSecondary, fontSize: Font.size.sm, marginTop: 3 },
+        time: { color: Colors.textMuted, fontSize: Font.size.xs, alignSelf: 'flex-start', paddingTop: 4 },
+      }),
+    [Colors],
+  );
+};
+
 export default function NotificationsScreen() {
+  const { Colors } = useTheme();
+  const styles = useStyles();
+  const TYPE_META: Record<string, { icon: IconName; color: string }> = {
+    now_playing: { icon: 'musical-notes', color: Colors.pink },
+    playlist_updated: { icon: 'albums', color: Colors.purpleBright },
+    import_complete: { icon: 'download', color: Colors.purple },
+    new_release: { icon: 'sparkles', color: Colors.red },
+    system: { icon: 'information-circle', color: Colors.textSecondary },
+  };
   const router = useRouter();
   const activeSong = useMusicStore((s) => s.activeSong);
   const [items, setItems] = React.useState<any[]>([]);
@@ -81,15 +101,3 @@ export default function NotificationsScreen() {
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10 },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  title: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold },
-  content: { paddingVertical: 10 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  iconWrap: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  rowTitle: { color: Colors.text, fontSize: Font.size.md, fontWeight: Font.weight.semibold },
-  rowBody: { color: Colors.textSecondary, fontSize: Font.size.sm, marginTop: 3 },
-  time: { color: Colors.textMuted, fontSize: Font.size.xs, alignSelf: 'flex-start', paddingTop: 4 },
-});

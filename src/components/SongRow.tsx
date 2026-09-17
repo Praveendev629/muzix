@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -6,8 +6,32 @@ import Artwork from '@/components/Artwork';
 import EqualizerBars from '@/components/EqualizerBars';
 import Icon, { type IconName } from '@/components/Icon';
 import { useMusicStore } from '@/store/musicStore';
-import { Colors, Font, Radius } from '@/constants/theme';
+import { Font, Radius, useTheme } from '@/constants/theme';
 import type { Song } from '@/types/music';
+
+const useStyles = () => {
+  const { Colors } = useTheme();
+  return useMemo(
+    () =>
+      StyleSheet.create({
+        row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10, gap: 12 },
+        pressed: { backgroundColor: `${Colors.purple}14` },
+        info: { flex: 1 },
+        title: { color: Colors.text, fontSize: Font.size.md, fontWeight: Font.weight.semibold },
+        activeTitle: { color: Colors.pink },
+        subtitle: { color: Colors.textSecondary, fontSize: Font.size.sm, marginTop: 2 },
+        right: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+        backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+        sheet: { backgroundColor: Colors.cardElevated, borderTopLeftRadius: Radius.xl, borderTopRightRadius: Radius.xl, borderWidth: 1, borderColor: Colors.border, paddingBottom: 40, paddingTop: 16 },
+        sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingBottom: 14 },
+        sheetTitle: { color: Colors.text, fontSize: Font.size.md, fontWeight: Font.weight.bold },
+        divider: { height: 1, backgroundColor: Colors.border, marginBottom: 6 },
+        menuItem: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 14 },
+        menuLabel: { color: Colors.text, fontSize: Font.size.md, fontWeight: Font.weight.medium },
+      }),
+    [Colors],
+  );
+};
 
 interface MenuItem {
   label: string;
@@ -27,12 +51,17 @@ interface SongRowProps {
 
 export default function SongRow({ song, onPress, active = false, showArtwork = true, playlistId, subtitle }: SongRowProps) {
   const router = useRouter();
+  const { Colors } = useTheme();
+  const styles = useStyles();
   const [menuOpen, setMenuOpen] = useState(false);
   const store = useMusicStore();
 
   const handlePress = () => {
     if (onPress) onPress(song);
-    else store.playSongs(store.songs, store.songs.findIndex((s) => s.id === song.id));
+    else {
+      store.playSongs(store.songs, store.songs.findIndex((s) => s.id === song.id));
+      router.push('/player');
+    }
   };
 
   const openMenu = () => {
@@ -73,7 +102,9 @@ export default function SongRow({ song, onPress, active = false, showArtwork = t
         </View>
         <View style={styles.right}>
           {active ? <EqualizerBars size={14} /> : null}
-          <Icon name="ellipsis-horizontal" size={18} color={Colors.textSecondary} onPress={openMenu} />
+          <Pressable onPress={openMenu} hitSlop={8} accessibilityLabel="More options">
+            <Icon name="ellipsis-horizontal" size={18} color={Colors.textSecondary} />
+          </Pressable>
         </View>
       </Pressable>
 
@@ -86,7 +117,9 @@ export default function SongRow({ song, onPress, active = false, showArtwork = t
                 <Text numberOfLines={1} style={styles.sheetTitle}>{song.title}</Text>
                 <Text numberOfLines={1} style={styles.subtitle}>{song.artist}</Text>
               </View>
-              <Icon name="close" size={20} color={Colors.textSecondary} onPress={() => setMenuOpen(false)} />
+              <Pressable onPress={() => setMenuOpen(false)} hitSlop={8} accessibilityLabel="Close">
+                <Icon name="close" size={20} color={Colors.textSecondary} />
+              </Pressable>
             </View>
             <View style={styles.divider} />
             {items.map((item, idx) => (
@@ -101,20 +134,3 @@ export default function SongRow({ song, onPress, active = false, showArtwork = t
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10, gap: 12 },
-  pressed: { backgroundColor: 'rgba(123,44,255,0.08)' },
-  info: { flex: 1 },
-  title: { color: Colors.text, fontSize: Font.size.md, fontWeight: Font.weight.semibold },
-  activeTitle: { color: Colors.pink },
-  subtitle: { color: Colors.textSecondary, fontSize: Font.size.sm, marginTop: 2 },
-  right: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: Colors.cardElevated, borderTopLeftRadius: Radius.xl, borderTopRightRadius: Radius.xl, borderWidth: 1, borderColor: Colors.border, paddingBottom: 40, paddingTop: 16 },
-  sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingBottom: 14 },
-  sheetTitle: { color: Colors.text, fontSize: Font.size.md, fontWeight: Font.weight.bold },
-  divider: { height: 1, backgroundColor: Colors.border, marginBottom: 6 },
-  menuItem: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 14 },
-  menuLabel: { color: Colors.text, fontSize: Font.size.md, fontWeight: Font.weight.medium },
-});

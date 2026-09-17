@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Icon from '@/components/Icon';
@@ -6,11 +6,36 @@ import Screen from '@/components/Screen';
 import Artwork from '@/components/Artwork';
 import SongRow from '@/components/SongRow';
 import EmptyState from '@/components/EmptyState';
+import MiniPlayer from '@/components/MiniPlayer';
 import { useMusicStore } from '@/store/musicStore';
-import { Colors, Font, Radius } from '@/constants/theme';
+import { Font, Radius, useTheme } from '@/constants/theme';
 import type { Song } from '@/types/music';
 
+const useStyles = () => {
+  const { Colors } = useTheme();
+  return useMemo(
+    () =>
+      StyleSheet.create({
+        header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10 },
+        backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+        title: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold, flex: 1, textAlign: 'center' },
+        content: { paddingBottom: 40 },
+        list: { flex: 1 },
+        hero: { alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20 },
+        heroTitle: { color: Colors.text, fontSize: Font.size.xl, fontWeight: Font.weight.extrabold, marginTop: 18 },
+        heroSub: { color: Colors.textSecondary, fontSize: Font.size.sm, marginTop: 6 },
+        heroBtns: { flexDirection: 'row', gap: 12, marginTop: 20 },
+        heroBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 22, paddingVertical: 12, borderRadius: Radius.pill, backgroundColor: Colors.purple },
+        heroBtnGhost: { backgroundColor: 'transparent', borderWidth: 1, borderColor: Colors.borderStrong },
+        heroBtnText: { color: Colors.white, fontWeight: Font.weight.bold },
+      }),
+    [Colors],
+  );
+};
+
 export default function PlaylistScreen() {
+  const { Colors } = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const songs = useMusicStore((s) => s.songs);
@@ -61,23 +86,11 @@ export default function PlaylistScreen() {
           </View>
         }
         ListEmptyComponent={<EmptyState icon="list" title="No songs in this playlist" subtitle="Open a song and choose Add to playlist." />}
-        renderItem={({ item }) => <SongRow song={item} playlistId={playlist.id} active={activeSong?.id === item.id} />}
+        renderItem={({ item }) => <SongRow song={item} playlistId={playlist.id} onPress={(song) => { const idx = list.findIndex((s) => s.id === song.id); playSongs(list, idx); }} active={activeSong?.id === item.id} />}
+        style={styles.list}
         contentContainerStyle={styles.content}
       />
+      <MiniPlayer />
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10 },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  title: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold, flex: 1, textAlign: 'center' },
-  content: { paddingBottom: 40 },
-  hero: { alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20 },
-  heroTitle: { color: Colors.text, fontSize: Font.size.xl, fontWeight: Font.weight.extrabold, marginTop: 18 },
-  heroSub: { color: Colors.textSecondary, fontSize: Font.size.sm, marginTop: 6 },
-  heroBtns: { flexDirection: 'row', gap: 12, marginTop: 20 },
-  heroBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 22, paddingVertical: 12, borderRadius: Radius.pill, backgroundColor: Colors.purple },
-  heroBtnGhost: { backgroundColor: 'transparent', borderWidth: 1, borderColor: Colors.borderStrong },
-  heroBtnText: { color: Colors.white, fontWeight: Font.weight.bold },
-});

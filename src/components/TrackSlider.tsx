@@ -1,7 +1,7 @@
 import Slider from '@react-native-community/slider';
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Colors, Font } from '@/constants/theme';
+import { Font, useTheme } from '@/constants/theme';
 
 export function formatTime(seconds: number): string {
   if (!isFinite(seconds) || seconds < 0) seconds = 0;
@@ -10,6 +10,20 @@ export function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+const useStyles = () => {
+  const { Colors } = useTheme();
+  return useMemo(
+    () =>
+      StyleSheet.create({
+        wrap: { width: '100%' },
+        slider: { width: '100%', height: 40 },
+        times: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4, marginTop: -6 },
+        time: { color: Colors.textSecondary, fontSize: Font.size.xs, fontVariant: ['tabular-nums'] },
+      }),
+    [Colors],
+  );
+};
+
 interface TrackSliderProps {
   position: number;
   duration: number;
@@ -17,6 +31,8 @@ interface TrackSliderProps {
 }
 
 export default function TrackSlider({ position, duration, onSeek }: TrackSliderProps) {
+  const { Colors } = useTheme();
+  const styles = useStyles();
   const max = duration > 0 ? duration : 1;
   return (
     <View style={styles.wrap}>
@@ -37,10 +53,3 @@ export default function TrackSlider({ position, duration, onSeek }: TrackSliderP
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  wrap: { width: '100%' },
-  slider: { width: '100%', height: 40 },
-  times: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 4, marginTop: -6 },
-  time: { color: Colors.textSecondary, fontSize: Font.size.xs, fontVariant: ['tabular-nums'] },
-});

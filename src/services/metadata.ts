@@ -190,8 +190,11 @@ export function parseMp4(head: Uint8Array, tail: Uint8Array): ParsedTags | null 
       const dataAtoms = parseAtoms(buf, child.start, child.start + child.size);
       const data = dataAtoms.find((a) => a.type === 'data');
       if (!data) continue;
+      // data.start already points past the 8-byte 'data' header, so the atomic
+      // data ends at data.start - 8 + size (size includes that header). The
+      // naive data.start + size overshoots and swallows the next atom's header.
       const payloadStart = data.start + 8; // skip type + locale
-      const payloadEnd = data.start + data.size;
+      const payloadEnd = data.start - 8 + data.size;
       if (payloadEnd <= payloadStart) continue;
       const payload = buf.subarray(payloadStart, payloadEnd);
       if (child.type === '\u00A9nam' && !tags.title) tags.title = utf8(payload, 0, payload.length).trim();
@@ -377,4 +380,33 @@ export function cleanTag(value?: string): string | undefined {
   const v = value?.trim();
   if (!v) return undefined;
   return v.replace(/\u0000/g, '').trim() || undefined;
+}
+
+/**
+ * Extract metadata from any readable URI (file:// or content://).
+ * Reads a bounded head (and tail for M4A) so embedded artwork and tags are
+ * captured without loading the whole file into memory.
+ */
+export async function extractMetadataFromUri(uri: string, fileName: string): Promise<ParsedTags | null> {
+  const format = detectFormat(fileName);
+  if (format === 'unknown') return null;
+  try {
+    const { readBytesFromUri, readBytesRangeFromUri, sizeOfUri } = await import('./fs');
+    const head = await readBytesFromUri(uri);
+    if (!head || head.length === 0) return null;
+    if (format === 'mp3') return parseId3v2(head);
+    if (format === 'flac') return parseFlac(head);
+    if (format === 'ogg') return parseOgg(head);
+    if (format === 'm4a') {
+      const size = await sizeOfUri(uri);
+      let tail: Uint8Array = new Uint8Array(0);
+      if (size && size > head.length) {
+        tail = (await readBytesRangeFromUri(uri, size - head.length, head.length)) ?? new Uint8Array(0);
+      }
+      return parseMp4(head, tail);
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }

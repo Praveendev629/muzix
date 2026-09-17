@@ -1,12 +1,31 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, Easing, Image, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Colors, Font, Gradients } from '@/constants/theme';
+import { Font, useTheme } from '@/constants/theme';
 
 const LOGO = require('../../assets/images/icon.png');
 
+const useStyles = () => {
+  const { Colors } = useTheme();
+  return useMemo(
+    () =>
+      StyleSheet.create({
+        fill: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+        logoWrap: { width: 150, height: 150, borderRadius: 34, marginBottom: 30 },
+        logo: { width: 150, height: 150, borderRadius: 34 },
+        title: { color: Colors.text, fontSize: Font.size.xxxl, fontWeight: Font.weight.extrabold, letterSpacing: 1 },
+        tagline: { color: Colors.pink, fontSize: Font.size.md, fontWeight: Font.weight.medium, marginTop: 8, letterSpacing: 2 },
+        loader: { flexDirection: 'row', gap: 8, marginTop: 34 },
+        dot: { width: 9, height: 9, borderRadius: 5, backgroundColor: Colors.purpleBright },
+      }),
+    [Colors],
+  );
+};
+
 /** Animated splash with logo scale-in + glow + tagline. */
 export default function SplashOverlay() {
+  const { Gradients } = useTheme();
+  const styles = useStyles();
   const scale = useRef(new Animated.Value(0.8)).current;
   const glow = useRef(new Animated.Value(0)).current;
   const title = useRef(new Animated.Value(0)).current;
@@ -43,6 +62,7 @@ export default function SplashOverlay() {
 }
 
 function ActivityDot({ delay = 0 }: { delay?: number }) {
+  const styles = useStyles();
   const y = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.loop(
@@ -54,13 +74,3 @@ function ActivityDot({ delay = 0 }: { delay?: number }) {
   }, [y, delay]);
   return <Animated.View style={[styles.dot, { transform: [{ translateY: y }] }]} />;
 }
-
-const styles = StyleSheet.create({
-  fill: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  logoWrap: { width: 150, height: 150, borderRadius: 34, marginBottom: 30 },
-  logo: { width: 150, height: 150, borderRadius: 34 },
-  title: { color: Colors.text, fontSize: Font.size.xxxl, fontWeight: Font.weight.extrabold, letterSpacing: 1 },
-  tagline: { color: Colors.pink, fontSize: Font.size.md, fontWeight: Font.weight.medium, marginTop: 8, letterSpacing: 2 },
-  loader: { flexDirection: 'row', gap: 8, marginTop: 34 },
-  dot: { width: 9, height: 9, borderRadius: 5, backgroundColor: Colors.purpleBright },
-});

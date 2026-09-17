@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Icon from '@/components/Icon';
@@ -6,9 +6,30 @@ import Screen from '@/components/Screen';
 import SongRow from '@/components/SongRow';
 import EmptyState from '@/components/EmptyState';
 import { useMusicStore, albumsOf } from '@/store/musicStore';
-import { Colors, Font } from '@/constants/theme';
+import { Font, useTheme } from '@/constants/theme';
+
+const useStyles = () => {
+  const { Colors } = useTheme();
+  return useMemo(
+    () =>
+      StyleSheet.create({
+        header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10 },
+        backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+        title: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold, flex: 1, textAlign: 'center' },
+        content: { paddingBottom: 40 },
+        hero: { alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20 },
+        avatar: { width: 140, height: 140, borderRadius: 70, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(123,44,255,0.16)', borderWidth: 1, borderColor: Colors.borderStrong },
+        heroTitle: { color: Colors.text, fontSize: Font.size.xl, fontWeight: Font.weight.extrabold, marginTop: 16, textAlign: 'center' },
+        heroSub: { color: Colors.textSecondary, fontSize: Font.size.sm, marginTop: 6 },
+        playBtn: { marginTop: 18, width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.purple },
+      }),
+    [Colors],
+  );
+};
 
 export default function ArtistScreen() {
+  const { Colors } = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const songs = useMusicStore((s) => s.songs);
@@ -47,21 +68,9 @@ export default function ArtistScreen() {
             <Pressable onPress={() => playSongs(artistSongs, 0)} style={styles.playBtn} accessibilityLabel="Play artist"><Icon name="play" size={22} color={Colors.white} /></Pressable>
           </View>
         }
-        renderItem={({ item }) => <SongRow song={item} active={activeSong?.id === item.id} />}
+        renderItem={({ item }) => <SongRow song={item} onPress={(song) => { const idx = artistSongs.findIndex((s) => s.id === song.id); playSongs(artistSongs, idx); }} active={activeSong?.id === item.id} />}
         contentContainerStyle={styles.content}
       />
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10 },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  title: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold, flex: 1, textAlign: 'center' },
-  content: { paddingBottom: 40 },
-  hero: { alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20 },
-  avatar: { width: 140, height: 140, borderRadius: 70, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(123,44,255,0.16)', borderWidth: 1, borderColor: Colors.borderStrong },
-  heroTitle: { color: Colors.text, fontSize: Font.size.xl, fontWeight: Font.weight.extrabold, marginTop: 16, textAlign: 'center' },
-  heroSub: { color: Colors.textSecondary, fontSize: Font.size.sm, marginTop: 6 },
-  playBtn: { marginTop: 18, width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.purple },
-});

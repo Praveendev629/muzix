@@ -1,12 +1,12 @@
 import Slider from '@react-native-community/slider';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Icon from '@/components/Icon';
 import Screen from '@/components/Screen';
 import NeonCard from '@/components/NeonCard';
 import { useMusicStore } from '@/store/musicStore';
-import { Colors, Font, Radius } from '@/constants/theme';
+import { Font, Radius, useTheme } from '@/constants/theme';
 import type { EqualizerSettings, EqPreset } from '@/types/music';
 
 const PRESETS: { name: EqPreset; gains: number[] }[] = [
@@ -20,8 +20,42 @@ const PRESETS: { name: EqPreset; gains: number[] }[] = [
 
 const BANDS = ['60Hz', '230Hz', '910Hz', '3.6kHz', '14kHz'];
 
+const useStyles = () => {
+  const { Colors } = useTheme();
+  return useMemo(
+    () =>
+      StyleSheet.create({
+        header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10 },
+        backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+        title: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold },
+        doneBtn: { paddingHorizontal: 12, paddingVertical: 8 },
+        doneText: { color: Colors.pink, fontWeight: Font.weight.bold },
+        content: { padding: 20, paddingBottom: 40 },
+        card: { padding: 18, marginBottom: 18 },
+        toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+        cardTitle: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold },
+        cardSub: { color: Colors.textSecondary, fontSize: Font.size.sm, marginTop: 3 },
+        note: { color: Colors.textMuted, fontSize: Font.size.xs, lineHeight: 16, marginTop: 12 },
+        section: { color: Colors.textSecondary, fontSize: Font.size.sm, fontWeight: Font.weight.semibold, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
+        chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
+        chip: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: Radius.pill, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border },
+        chipActive: { backgroundColor: Colors.purple, borderColor: Colors.borderStrong },
+        chipText: { color: Colors.textSecondary, fontWeight: Font.weight.semibold, fontSize: Font.size.sm },
+        chipTextActive: { color: Colors.white },
+        bandsCard: { padding: 16, marginBottom: 18 },
+        bandRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+        bandLabel: { width: 74, color: Colors.text, fontSize: Font.size.sm, fontWeight: Font.weight.semibold },
+        bandValue: { width: 52, textAlign: 'right', color: Colors.textSecondary, fontSize: Font.size.xs, fontVariant: ['tabular-nums'] },
+        bassRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+      }),
+    [Colors],
+  );
+};
+
 export default function EqualizerScreen() {
   const router = useRouter();
+  const { Colors } = useTheme();
+  const styles = useStyles();
   const equalizer = useMusicStore((s) => s.equalizer);
   const applyEqualizer = useMusicStore((s) => s.applyEqualizer);
   const [local, setLocal] = useState<EqualizerSettings>(equalizer);
@@ -113,28 +147,3 @@ export default function EqualizerScreen() {
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10 },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  title: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold },
-  doneBtn: { paddingHorizontal: 12, paddingVertical: 8 },
-  doneText: { color: Colors.pink, fontWeight: Font.weight.bold },
-  content: { padding: 20, paddingBottom: 40 },
-  card: { padding: 18, marginBottom: 18 },
-  toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  cardTitle: { color: Colors.text, fontSize: Font.size.lg, fontWeight: Font.weight.bold },
-  cardSub: { color: Colors.textSecondary, fontSize: Font.size.sm, marginTop: 3 },
-  note: { color: Colors.textMuted, fontSize: Font.size.xs, lineHeight: 16, marginTop: 12 },
-  section: { color: Colors.textSecondary, fontSize: Font.size.sm, fontWeight: Font.weight.semibold, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
-  chip: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: Radius.pill, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border },
-  chipActive: { backgroundColor: Colors.purple, borderColor: Colors.borderStrong },
-  chipText: { color: Colors.textSecondary, fontWeight: Font.weight.semibold, fontSize: Font.size.sm },
-  chipTextActive: { color: Colors.white },
-  bandsCard: { padding: 16, marginBottom: 18 },
-  bandRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  bandLabel: { width: 74, color: Colors.text, fontSize: Font.size.sm, fontWeight: Font.weight.semibold },
-  bandValue: { width: 52, textAlign: 'right', color: Colors.textSecondary, fontSize: Font.size.xs, fontVariant: ['tabular-nums'] },
-  bassRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-});
