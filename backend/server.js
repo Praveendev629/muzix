@@ -3,8 +3,6 @@ const cors = require('cors');
 const { execFile, spawn } = require('child_process');
 const { promisify } = require('util');
 const path = require('path');
-const fs = require('fs');
-const os = require('os');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,7 +12,6 @@ app.use(express.json());
 
 const execFileAsync = promisify(execFile);
 
-// Find yt-dlp binary
 function findYtDlp() {
   const candidates = [
     'yt-dlp',
@@ -34,7 +31,6 @@ function findYtDlp() {
 const YTDLP = findYtDlp();
 console.log('[startup] yt-dlp binary:', YTDLP);
 
-// Health check
 app.get('/', (req, res) => {
   res.json({ status: 'ok', service: 'muzix-ytdl-backend', ytdlp: YTDLP });
 });
@@ -56,6 +52,7 @@ app.get('/api/search', async (req, res) => {
       '--dump-json',
       '--no-warnings',
       '--ignore-errors',
+      '--extractor-args', 'youtube:player_client=web',
     ], { timeout: 30000, maxBuffer: 10 * 1024 * 1024 });
 
     const lines = stdout.trim().split('\n').filter(Boolean);
@@ -81,69 +78,7 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
-// Convert YouTube URL to MP3 stream
-app.get('/api/convert', async (req, res) => {
-  try {
-    const url = req.query.url;
-    if (!url) return res.status(400).json({ error: 'Missing url parameter' });
-
-    // Validate YouTube URL
-    const ytMatch = url.match(/(?:youtu\.be\/|v\/|embed\/|watch\?v=|watch\?.+&v=)([^#&?]{11})/);
-    if (!ytMatch) return res.status(400).json({ error: 'Invalid YouTube URL' });
-
-    const videoId = ytMatch[1];
-
-    // Get video info first
-    let title = 'audio';
-    try {
-      const { stdout } = await execFileAsync(YTDLP, [
-        url, '--dump-json', '--no-download', '--no-warnings', '--ignore-errors',
-      ], { timeout: 15000 });
-      const info = JSON.parse(stdout);
-      title = (info.title || 'audio').replace(/[^a-zA-Z0-9 _-]/g, '_').substring(0, 100);
-    } catch {}
-
-    // Set response headers for MP3 stream
-    res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Content-Disposition', `inline; filename="${title}.mp3"`);
-    res.setHeader('Cache-Control', 'no-cache');
-
-    // Stream audio directly from yt-dlp
-    const ytDlp = spawn(YTDLP, [
-      url,
-      '-f', 'bestaudio[ext=m4a]/bestaudio/best',
-      '-o', '-',
-      '--no-warnings',
-      '--ignore-errors',
-      '--quiet',
-    ], { stdio: ['ignore', 'pipe', 'pipe'] });
-
-    ytDlp.stdout.pipe(res);
-
-    ytDlp.on('error', (err) => {
-      console.error('[convert] Spawn error:', err.message);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Conversion failed' });
-      }
-    });
-
-    ytDlp.stderr.on('data', (data) => {
-      // yt-dlp outputs progress to stderr, ignore it
-    });
-
-    req.on('close', () => {
-      ytDlp.kill('SIGTERM');
-    });
-
-  } catch (e) {
-    console.error('[convert] Error:', e.message);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Conversion failed' });
-    }
-  }
-});
-
-// Get audio URL (returns a redirect to the stream)
+// Get audio URL (returns direct stream URL)
 app.get('/api/audio', async (req, res) => {
   try {
     const url = req.query.url;
@@ -152,32 +87,95 @@ app.get('/api/audio', async (req, res) => {
     const ytMatch = url.match(/(?:youtu\.be\/|v\/|embed\/|watch\?v=|watch\?.+&v=)([^#&?]{11})/);
     if (!ytMatch) return res.status(400).json({ error: 'Invalid YouTube URL' });
 
-    // Get the direct audio URL from yt-dlp
-    const { stdout } = await execFileAsync(YTDLP, [
+    console.log('[audio] Getting URL for:', url);
+
+    const { stdout, stderr } = await execFileAsync(YTDLP, [
       url,
       '-f', 'bestaudio[ext=m4a]/bestaudio/best',
       '-g',
       '--no-warnings',
       '--ignore-errors',
-      '--quiet',
-    ], { timeout: 30000 });
+      '--extractor-args', 'youtube:player_client=android,web',
+    ], { timeout: 45000, maxBuffer: 5 * 1024 * 1024 });
+
+    if (stderr) console.log('[audio] stderr:', stderr.substring(0, 500));
 
     const audioUrl = stdout.trim().split('\n')[0];
-    if (!audioUrl) return res.status(404).json({ error: 'No audio found' });
+    if (!audioUrl || !audioUrl.startsWith('http')) {
+      console.error('[audio] No valid URL. stdout:', stdout.substring(0, 300));
+      return res.status(404).json({ error: 'No audio found' });
+    }
 
-    // Get title for response
     let title = 'audio';
     try {
       const { stdout: infoOut } = await execFileAsync(YTDLP, [
         url, '--dump-json', '--no-download', '--no-warnings', '--ignore-errors',
-      ], { timeout: 10000 });
+        '--extractor-args', 'youtube:player_client=web',
+      ], { timeout: 15000 });
       title = JSON.parse(infoOut).title || 'audio';
     } catch {}
 
+    console.log('[audio] Success:', title);
     res.json({ audioUrl, title });
   } catch (e) {
     console.error('[audio] Error:', e.message);
-    res.status(500).json({ error: 'Failed to get audio URL' });
+    res.status(500).json({ error: 'Failed to get audio URL', detail: e.message });
+  }
+});
+
+// Stream audio directly
+app.get('/api/convert', async (req, res) => {
+  try {
+    const url = req.query.url;
+    if (!url) return res.status(400).json({ error: 'Missing url parameter' });
+
+    const ytMatch = url.match(/(?:youtu\.be\/|v\/|embed\/|watch\?v=|watch\?.+&v=)([^#&?]{11})/);
+    if (!ytMatch) return res.status(400).json({ error: 'Invalid YouTube URL' });
+
+    console.log('[convert] Converting:', url);
+
+    let title = 'audio';
+    try {
+      const { stdout } = await execFileAsync(YTDLP, [
+        url, '--dump-json', '--no-download', '--no-warnings', '--ignore-errors',
+        '--extractor-args', 'youtube:player_client=web',
+      ], { timeout: 15000 });
+      title = (JSON.parse(stdout).title || 'audio').replace(/[^a-zA-Z0-9 _-]/g, '_').substring(0, 100);
+    } catch {}
+
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Disposition', `inline; filename="${title}.mp3"`);
+    res.setHeader('Cache-Control', 'no-cache');
+
+    const ytDlp = spawn(YTDLP, [
+      url,
+      '-f', 'bestaudio[ext=m4a]/bestaudio/best',
+      '-o', '-',
+      '--no-warnings',
+      '--ignore-errors',
+      '--quiet',
+      '--extractor-args', 'youtube:player_client=android,web',
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+
+    let sentBytes = 0;
+    ytDlp.stdout.on('data', (chunk) => { sentBytes += chunk.length; });
+    ytDlp.stdout.pipe(res);
+
+    ytDlp.on('error', (err) => {
+      console.error('[convert] Spawn error:', err.message);
+      if (!res.headersSent) res.status(500).json({ error: 'Conversion failed' });
+    });
+
+    ytDlp.on('close', (code) => {
+      console.log('[convert] Done, code:', code, 'bytes:', sentBytes);
+    });
+
+    ytDlp.stderr.on('data', (data) => {});
+
+    req.on('close', () => { ytDlp.kill('SIGTERM'); });
+  } catch (e) {
+    console.error('[convert] Error:', e.message);
+    if (!res.headersSent) res.status(500).json({ error: 'Conversion failed' });
   }
 });
 
