@@ -3,6 +3,8 @@ const cors = require('cors');
 const { execFile, spawn } = require('child_process');
 const { promisify } = require('util');
 const path = require('path');
+const https = require('https');
+const http = require('http');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -30,6 +32,50 @@ function findYtDlp() {
 
 const YTDLP = findYtDlp();
 console.log('[startup] yt-dlp binary:', YTDLP);
+
+const PIPED_INSTANCES = [
+  'https://pipedapi.kavin.rocks',
+  'https://pipedapi.adminforge.de',
+  'https://piped-api.privacy.com.de',
+  'https://api.piped.yt',
+];
+
+function httpGet(url, timeout = 15000) {
+  return new Promise((resolve, reject) => {
+    const mod = url.startsWith('https') ? https : http;
+    const req = mod.get(url, { timeout }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return httpGet(res.headers.location, timeout).then(resolve, reject);
+      }
+      let data = '';
+      res.on('data', (c) => { data += c; });
+      res.on('end', () => resolve({ status: res.statusCode, data }));
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+  });
+}
+
+async function pipedGetStream(videoId) {
+  for (const base of PIPED_INSTANCES) {
+    try {
+      console.log('[piped] Trying:', base);
+      const { status, data } = await httpGet(`${base}/streams/${videoId}`, 20000);
+      if (status === 200) {
+        const json = JSON.parse(data);
+        const audioStreams = json.audioStreams || [];
+        if (audioStreams.length > 0) {
+          const best = audioStreams.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+          console.log('[piped] Got stream from', base, 'bitrate:', best.bitrate);
+          return { audioUrl: best.url, title: json.title || 'audio' };
+        }
+      }
+    } catch (e) {
+      console.log('[piped] Failed:', base, e.message);
+    }
+  }
+  return null;
+}
 
 app.get('/', (req, res) => {
   res.json({ status: 'ok', service: 'muzix-ytdl-backend', ytdlp: YTDLP });
@@ -78,7 +124,7 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
-// Get audio URL (returns direct stream URL)
+// Get audio URL - tries yt-dlp first, falls back to Piped
 app.get('/api/audio', async (req, res) => {
   try {
     const url = req.query.url;
@@ -87,39 +133,48 @@ app.get('/api/audio', async (req, res) => {
     const ytMatch = url.match(/(?:youtu\.be\/|v\/|embed\/|watch\?v=|watch\?.+&v=)([^#&?]{11})/);
     if (!ytMatch) return res.status(400).json({ error: 'Invalid YouTube URL' });
 
-    console.log('[audio] Getting URL for:', url);
+    const videoId = ytMatch[1];
+    console.log('[audio] Getting URL for:', videoId);
 
-    const { stdout, stderr } = await execFileAsync(YTDLP, [
-      url,
-      '-f', 'bestaudio[ext=m4a]/bestaudio/best',
-      '-g',
-      '--no-warnings',
-      '--ignore-errors',
-      '--extractor-args', 'youtube:player_client=android,web',
-    ], { timeout: 45000, maxBuffer: 5 * 1024 * 1024 });
+    // Try yt-dlp first
+    try {
+      const { stdout } = await execFileAsync(YTDLP, [
+        url,
+        '-f', 'bestaudio[ext=m4a]/bestaudio/best',
+        '-g',
+        '--no-warnings',
+        '--ignore-errors',
+        '--extractor-args', 'youtube:player_client=android,web',
+      ], { timeout: 30000 });
 
-    if (stderr) console.log('[audio] stderr:', stderr.substring(0, 500));
-
-    const audioUrl = stdout.trim().split('\n')[0];
-    if (!audioUrl || !audioUrl.startsWith('http')) {
-      console.error('[audio] No valid URL. stdout:', stdout.substring(0, 300));
-      return res.status(404).json({ error: 'No audio found' });
+      const audioUrl = stdout.trim().split('\n')[0];
+      if (audioUrl && audioUrl.startsWith('http')) {
+        let title = 'audio';
+        try {
+          const { stdout: infoOut } = await execFileAsync(YTDLP, [
+            url, '--dump-json', '--no-download', '--no-warnings', '--ignore-errors',
+          ], { timeout: 10000 });
+          title = JSON.parse(infoOut).title || 'audio';
+        } catch {}
+        console.log('[audio] yt-dlp success:', title);
+        return res.json({ audioUrl, title });
+      }
+    } catch (e) {
+      console.log('[audio] yt-dlp failed:', e.message.substring(0, 200));
     }
 
-    let title = 'audio';
-    try {
-      const { stdout: infoOut } = await execFileAsync(YTDLP, [
-        url, '--dump-json', '--no-download', '--no-warnings', '--ignore-errors',
-        '--extractor-args', 'youtube:player_client=web',
-      ], { timeout: 15000 });
-      title = JSON.parse(infoOut).title || 'audio';
-    } catch {}
+    // Fallback to Piped
+    console.log('[audio] Falling back to Piped...');
+    const piped = await pipedGetStream(videoId);
+    if (piped) {
+      console.log('[audio] Piped success:', piped.title);
+      return res.json({ audioUrl: piped.audioUrl, title: piped.title });
+    }
 
-    console.log('[audio] Success:', title);
-    res.json({ audioUrl, title });
+    res.status(404).json({ error: 'No audio source available' });
   } catch (e) {
     console.error('[audio] Error:', e.message);
-    res.status(500).json({ error: 'Failed to get audio URL', detail: e.message });
+    res.status(500).json({ error: 'Failed to get audio URL' });
   }
 });
 
@@ -132,47 +187,56 @@ app.get('/api/convert', async (req, res) => {
     const ytMatch = url.match(/(?:youtu\.be\/|v\/|embed\/|watch\?v=|watch\?.+&v=)([^#&?]{11})/);
     if (!ytMatch) return res.status(400).json({ error: 'Invalid YouTube URL' });
 
-    console.log('[convert] Converting:', url);
+    const videoId = ytMatch[1];
+    console.log('[convert] Converting:', videoId);
 
+    // Get audio URL via /api/audio logic inline
+    let audioUrl = null;
     let title = 'audio';
+
     try {
       const { stdout } = await execFileAsync(YTDLP, [
-        url, '--dump-json', '--no-download', '--no-warnings', '--ignore-errors',
-        '--extractor-args', 'youtube:player_client=web',
-      ], { timeout: 15000 });
-      title = (JSON.parse(stdout).title || 'audio').replace(/[^a-zA-Z0-9 _-]/g, '_').substring(0, 100);
+        url, '-f', 'bestaudio[ext=m4a]/bestaudio/best', '-g',
+        '--no-warnings', '--ignore-errors',
+        '--extractor-args', 'youtube:player_client=android,web',
+      ], { timeout: 30000 });
+
+      const streamUrl = stdout.trim().split('\n')[0];
+      if (streamUrl && streamUrl.startsWith('http')) audioUrl = streamUrl;
     } catch {}
+
+    if (!audioUrl) {
+      const piped = await pipedGetStream(videoId);
+      if (piped) {
+        audioUrl = piped.audioUrl;
+        title = piped.title;
+      }
+    }
+
+    if (!audioUrl) return res.status(404).json({ error: 'No audio source' });
 
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Content-Disposition', `inline; filename="${title}.mp3"`);
     res.setHeader('Cache-Control', 'no-cache');
 
-    const ytDlp = spawn(YTDLP, [
-      url,
-      '-f', 'bestaudio[ext=m4a]/bestaudio/best',
-      '-o', '-',
-      '--no-warnings',
-      '--ignore-errors',
-      '--quiet',
-      '--extractor-args', 'youtube:player_client=android,web',
-    ], { stdio: ['ignore', 'pipe', 'pipe'] });
-
-    let sentBytes = 0;
-    ytDlp.stdout.on('data', (chunk) => { sentBytes += chunk.length; });
-    ytDlp.stdout.pipe(res);
-
-    ytDlp.on('error', (err) => {
-      console.error('[convert] Spawn error:', err.message);
-      if (!res.headersSent) res.status(500).json({ error: 'Conversion failed' });
+    const proxyReq = https.get(audioUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      timeout: 60000,
+    }, (proxyRes) => {
+      if (proxyRes.statusCode >= 300 && proxyRes.statusCode < 400 && proxyRes.headers.location) {
+        res.redirect('/api/convert?url=' + encodeURIComponent(proxyRes.headers.location));
+        return;
+      }
+      res.setHeader('Content-Type', proxyRes.headers['content-type'] || 'audio/mpeg');
+      proxyRes.pipe(res);
     });
 
-    ytDlp.on('close', (code) => {
-      console.log('[convert] Done, code:', code, 'bytes:', sentBytes);
+    proxyReq.on('error', (err) => {
+      console.error('[convert] Proxy error:', err.message);
+      if (!res.headersSent) res.status(500).json({ error: 'Stream failed' });
     });
 
-    ytDlp.stderr.on('data', (data) => {});
-
-    req.on('close', () => { ytDlp.kill('SIGTERM'); });
+    req.on('close', () => { proxyReq.destroy(); });
   } catch (e) {
     console.error('[convert] Error:', e.message);
     if (!res.headersSent) res.status(500).json({ error: 'Conversion failed' });
