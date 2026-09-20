@@ -66,8 +66,8 @@ function setupCookies() {
 
 const hasCookies = setupCookies();
 
-function ytdlpArgs(url, extra = []) {
-  const args = [url, ...extra, '--no-warnings', '--ignore-errors'];
+function ytdlpExtra() {
+  const args = ['--no-warnings', '--ignore-errors'];
   if (hasCookies) args.push('--cookies', COOKIES_PATH);
   return args;
 }
@@ -98,7 +98,7 @@ app.get('/api/search', async (req, res) => {
     const { stdout } = await execFileAsync(YTDLP, [
       `ytsearch${limit}:${query}`,
       '--flat-playlist', '--dump-json',
-      ...ytdlpArgs('', []),
+      ...ytdlpExtra(),
     ], { timeout: 30000, maxBuffer: 10 * 1024 * 1024 });
 
     const lines = stdout.trim().split('\n').filter(Boolean);
@@ -138,7 +138,9 @@ app.get('/api/audio', async (req, res) => {
     // Try yt-dlp with cookies
     try {
       const { stdout } = await execFileAsync(YTDLP, [
-        ...ytdlpArgs(url, ['-f', 'bestaudio[ext=m4a]/bestaudio/best', '-g']),
+        url,
+        '-f', 'bestaudio[ext=m4a]/bestaudio/best', '-g',
+        ...ytdlpExtra(),
       ], { timeout: 45000, maxBuffer: 5 * 1024 * 1024 });
 
       const streamUrl = stdout.trim().split('\n')[0];
@@ -146,7 +148,9 @@ app.get('/api/audio', async (req, res) => {
         let title = 'audio';
         try {
           const { stdout: infoOut } = await execFileAsync(YTDLP, [
-            ...ytdlpArgs(url, ['--dump-json', '--no-download']),
+            url,
+            '--dump-json', '--no-download',
+            ...ytdlpExtra(),
           ], { timeout: 15000 });
           title = JSON.parse(infoOut).title || 'audio';
         } catch {}
@@ -194,7 +198,9 @@ app.get('/api/convert', async (req, res) => {
 
     try {
       const { stdout } = await execFileAsync(YTDLP, [
-        ...ytdlpArgs(url, ['-f', 'bestaudio[ext=m4a]/bestaudio/best', '-g']),
+        url,
+        '-f', 'bestaudio[ext=m4a]/bestaudio/best', '-g',
+        ...ytdlpExtra(),
       ], { timeout: 45000 });
       const streamUrl = stdout.trim().split('\n')[0];
       if (streamUrl && streamUrl.startsWith('http')) audioUrl = streamUrl;
