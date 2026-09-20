@@ -182,6 +182,19 @@ app.get('/api/audio', async (req, res) => {
   }
 });
 
+// Debug: show yt-dlp output
+app.get('/api/debug', async (req, res) => {
+  try {
+    const url = req.query.url || 'https://www.youtube.com/watch?v=60ItHLz5WEA';
+    const args = [url, '-f', 'bestaudio[ext=m4a]/bestaudio/best', '-g', ...ytdlpExtra()];
+    console.log('[debug] Running:', YTDLP, args.join(' '));
+    const { stdout, stderr } = await execFileAsync(YTDLP, args, { timeout: 45000, maxBuffer: 5 * 1024 * 1024 });
+    res.json({ stdout: stdout.substring(0, 500), stderr: stderr.substring(0, 1000) });
+  } catch (e) {
+    res.json({ error: e.message?.substring(0, 500), stdout: e.stdout?.substring(0, 500), stderr: e.stderr?.substring(0, 500) });
+  }
+});
+
 // Stream audio
 app.get('/api/convert', async (req, res) => {
   try {
