@@ -32,16 +32,19 @@ const COOKIES_PATH = '/tmp/cookies.txt';
 
 function parseBrowserCookies(cookieStr) {
   if (!cookieStr) return null;
-  const lines = ['# Netscape HTTP Cookie File'];
+  const lines = ['# Netscape HTTP Cookie File', '# Converted from browser cookies'];
   const pairs = cookieStr.split(';').map(s => s.trim()).filter(Boolean);
   for (const pair of pairs) {
     const eqIdx = pair.indexOf('=');
     if (eqIdx < 0) continue;
     const name = pair.substring(0, eqIdx).trim();
     const value = pair.substring(eqIdx + 1).trim();
-    lines.push(`.youtube.com\tTRUE\t/\tTRUE\t0\t${name}\t${value}`);
+    // Netscape format: domain  flag  path  secure  expiry  name  value
+    // Use TRUE for secure since __Secure- cookies require HTTPS
+    const isSecure = name.startsWith('__Secure-') || name.startsWith('__Host-');
+    lines.push(`.youtube.com\tTRUE\t/\t${isSecure ? 'TRUE' : 'FALSE'}\t0\t${name}\t${value}`);
   }
-  return lines.join('\n');
+  return lines.join('\n') + '\n';
 }
 
 function setupCookies() {
@@ -185,13 +188,30 @@ app.get('/api/audio', async (req, res) => {
 // Debug: show yt-dlp output
 app.get('/api/debug', async (req, res) => {
   try {
+    // Show cookie file first few lines
+    let cookiePreview = 'no cookies file';
+    try {
+      const content = fs.readFileSync(COOKIES_PATH, 'utf8');
+      const lines = content.split('\n');
+      cookiePreview = `Total lines: ${lines.length}. First 3: ${lines.slice(0, 3).join(' | ')}`;
+    } catch (e) {
+      cookiePreview = `Error reading cookies: ${e.message}`;
+    }
+
+    // Get yt-dlp version
+    let version = 'unknown';
+    try {
+      const { stdout } = await execFileAsync(YTDLP, ['--version'], { timeout: 5000 });
+      version = stdout.trim();
+    } catch {}
+
     const url = req.query.url || 'https://www.youtube.com/watch?v=60ItHLz5WEA';
-    const args = [url, '-f', 'bestaudio[ext=m4a]/bestaudio/best', '-g', ...ytdlpExtra()];
+    const args = [url, '-f', 'bestaudio[ext=m4a]/bestaudio/best', '-g', '--verbose', ...ytdlpExtra()];
     console.log('[debug] Running:', YTDLP, args.join(' '));
     const { stdout, stderr } = await execFileAsync(YTDLP, args, { timeout: 45000, maxBuffer: 5 * 1024 * 1024 });
-    res.json({ stdout: stdout.substring(0, 500), stderr: stderr.substring(0, 1000) });
+    res.json({ version, cookiePreview, stdout: stdout.substring(0, 500), stderr: stderr.substring(0, 2000) });
   } catch (e) {
-    res.json({ error: e.message?.substring(0, 500), stdout: e.stdout?.substring(0, 500), stderr: e.stderr?.substring(0, 500) });
+    res.json({ error: e.message?.substring(0, 500), stdout: e.stdout?.substring(0, 500), stderr: e.stderr?.substring(0, 2000) });
   }
 });
 
