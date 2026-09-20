@@ -70,7 +70,7 @@ function setupCookies() {
 const hasCookies = setupCookies();
 
 function ytdlpExtra() {
-  const args = ['--no-warnings', '--ignore-errors', '--js-runtimes', 'node'];
+  const args = ['--no-warnings', '--ignore-errors', '--extractor-args', 'youtube:player_client=mweb'];
   if (hasCookies) args.push('--cookies', COOKIES_PATH);
   return args;
 }
