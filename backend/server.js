@@ -281,7 +281,6 @@ app.get('/api/stream', async (req, res) => {
     try {
       audioUrl = await getStreamUrl(videoId);
     } catch (e) {
-      // Clear cache and retry once (stale visitor data)
       streamCache.delete(videoId);
       cachedVisitorData = '';
       audioUrl = await getStreamUrl(videoId);
@@ -291,6 +290,27 @@ app.get('/api/stream', async (req, res) => {
   } catch (e) {
     console.error('[stream] Error:', e.message);
     if (!res.headersSent) res.status(502).json({ error: 'Stream failed' });
+  }
+});
+
+// Proxy a pre-resolved audio URL (phone resolves via InnerTube, backend streams with correct UA)
+app.get('/api/proxy', async (req, res) => {
+  try {
+    const src = req.query.src;
+    if (!src) return res.status(400).json({ error: 'Missing src' });
+    let audioUrl;
+    try {
+      audioUrl = decodeURIComponent(src);
+    } catch {
+      audioUrl = src;
+    }
+    if (!audioUrl.includes('googlevideo.com')) {
+      return res.status(400).json({ error: 'Invalid URL' });
+    }
+    await proxyStream(audioUrl, req, res);
+  } catch (e) {
+    console.error('[proxy] Error:', e.message);
+    if (!res.headersSent) res.status(502).json({ error: 'Proxy failed' });
   }
 });
 
