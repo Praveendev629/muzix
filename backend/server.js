@@ -59,52 +59,86 @@ async function getVisitorData() {
 async function innertubeAudio(videoId) {
   const visitorData = await getVisitorData();
 
-  const resp = await fetch(`https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_KEY}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'User-Agent': ANDROID_VR_UA,
-      ...(visitorData && { 'X-Goog-Visitor-Id': visitorData }),
-    },
-    body: JSON.stringify({
-      videoId,
-      context: { client: { ...INNERTUBE_CLIENT, ...(visitorData && { visitorData }) } },
-      contentCheckOk: true,
-      racyCheckOk: true,
-      params: 'CgIQBg==',
-    }),
-    signal: AbortSignal.timeout(10000),
+  const body = JSON.stringify({
+    videoId,
+    context: { client: { ...INNERTUBE_CLIENT, ...(visitorData && { visitorData }) } },
+    contentCheckOk: true,
+    racyCheckOk: true,
+    params: 'CgIQBg==',
   });
 
-  if (!resp.ok) throw new Error(`InnerTube HTTP ${resp.status}`);
-  const data = await resp.json();
+  // Try youtubei.googleapis.com (no API key) first, then www.youtube.com with key
+  const endpoints = [
+    'https://youtubei.googleapis.com/youtubei/v1/player',
+    `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_KEY}`,
+  ];
 
-  const status = data.playabilityStatus?.status;
-  if (status !== 'OK') throw new Error(`Playability: ${status}`);
+  let lastError = 'No endpoint tried';
+  for (const endpoint of endpoints) {
+    try {
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': ANDROID_VR_UA,
+          'X-Youtube-Client-Name': '28',
+          'X-Youtube-Client-Version': INNERTUBE_CLIENT.clientVersion,
+          ...(visitorData && { 'X-Goog-Visitor-Id': visitorData }),
+        },
+        body,
+        signal: AbortSignal.timeout(10000),
+      });
 
-  const formats = data.streamingData?.adaptiveFormats || [];
+      if (resp.status === 403) {
+        lastError = `HTTP 403 from ${new URL(endpoint).hostname}`;
+        cachedVisitorData = ''; // refresh visitor data
+        continue;
+      }
+      if (!resp.ok) {
+        lastError = `HTTP ${resp.status}`;
+        continue;
+      }
 
-  // Prefer itag 140 (128kbps AAC m4a), then best audio/mp4, then any audio
-  let best = formats.find((f) => f.itag === 140 && f.url);
-  if (!best) {
-    best = formats
-      .filter((f) => f.mimeType?.startsWith('audio/mp4') && f.url)
-      .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+      const data = await resp.json();
+      const status = data.playabilityStatus?.status;
+      if (status !== 'OK') throw new Error(`Playability: ${status}`);
+
+      const formats = data.streamingData?.adaptiveFormats || [];
+
+      // Prefer itag 140 (128kbps AAC m4a), then best audio/mp4, then any audio
+      let best = formats.find((f) => f.itag === 140 && f.url);
+      if (!best) {
+        best = formats
+          .filter((f) => f.mimeType?.startsWith('audio/mp4') && f.url)
+          .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+      }
+      if (!best) {
+        best = formats
+          .filter((f) => f.mimeType?.startsWith('audio/') && f.url)
+          .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+      }
+      if (!best?.url) throw new Error('No audio format with URL');
+
+      return {
+        audioUrl: best.url,
+        title: data.videoDetails?.title || '',
+        duration: parseInt(data.videoDetails?.lengthSeconds || '0', 10),
+        author: data.videoDetails?.author || '',
+        thumbnail: data.videoDetails?.thumbnail?.thumbnails?.pop()?.url || '',
+      };
+    } catch (e) {
+      if (e.name === 'TimeoutError' || e.name === 'AbortError') {
+        lastError = 'Timeout';
+        continue;
+      }
+      // Playability / format errors are real failures — don't try next endpoint
+      if (e.message.startsWith('Playability:') || e.message === 'No audio format with URL') {
+        throw e;
+      }
+      lastError = e.message;
+    }
   }
-  if (!best) {
-    best = formats
-      .filter((f) => f.mimeType?.startsWith('audio/') && f.url)
-      .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
-  }
-  if (!best?.url) throw new Error('No audio format with URL');
-
-  return {
-    audioUrl: best.url,
-    title: data.videoDetails?.title || '',
-    duration: parseInt(data.videoDetails?.lengthSeconds || '0', 10),
-    author: data.videoDetails?.author || '',
-    thumbnail: data.videoDetails?.thumbnail?.thumbnails?.pop()?.url || '',
-  };
+  throw new Error(lastError);
 }
 
 // ---- stream URL cache (re-resolve before expiry) ----
