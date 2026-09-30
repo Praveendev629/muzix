@@ -1,10 +1,10 @@
 const express = require('express');
 const cors = require('cors');
-const { execFile, spawn } = require('child_process');
+const { execFile } = require('child_process');
 const { promisify } = require('util');
-const path = require('path');
 const https = require('https');
-const fs = require('fs');
+
+const execFileAsync = promisify(execFile);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,8 +12,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-const execFileAsync = promisify(execFile);
-
+// ---- yt-dlp (search only; audio uses InnerTube) ----
 function findYtDlp() {
   const candidates = ['yt-dlp', '/usr/local/bin/yt-dlp', '/usr/bin/yt-dlp'];
   for (const c of candidates) {
@@ -24,74 +23,157 @@ function findYtDlp() {
   }
   return 'yt-dlp';
 }
-
 const YTDLP = findYtDlp();
-console.log('[startup] yt-dlp:', YTDLP);
 
-const COOKIES_PATH = '/tmp/cookies.txt';
+// ---- InnerTube ANDROID_VR (audio extraction) ----
+const ANDROID_VR_UA = 'com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip';
+const INNERTUBE_KEY = 'AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w';
+const INNERTUBE_CLIENT = {
+  clientName: 'ANDROID_VR',
+  clientVersion: '1.65.10',
+  deviceMake: 'Oculus',
+  deviceModel: 'Quest 3',
+  androidSdkVersion: 32,
+  osName: 'Android',
+  osVersion: '12L',
+  hl: 'en',
+};
 
-function parseBrowserCookies(cookieStr) {
-  if (!cookieStr) return null;
-  const lines = ['# Netscape HTTP Cookie File', '# Converted from browser cookies'];
-  const pairs = cookieStr.split(';').map(s => s.trim()).filter(Boolean);
-  for (const pair of pairs) {
-    const eqIdx = pair.indexOf('=');
-    if (eqIdx < 0) continue;
-    const name = pair.substring(0, eqIdx).trim();
-    const value = pair.substring(eqIdx + 1).trim();
-    // Netscape format: domain  flag  path  secure  expiry  name  value
-    // Use TRUE for secure since __Secure- cookies require HTTPS
-    const isSecure = name.startsWith('__Secure-') || name.startsWith('__Host-');
-    lines.push(`.youtube.com\tTRUE\t/\t${isSecure ? 'TRUE' : 'FALSE'}\t0\t${name}\t${value}`);
-  }
-  return lines.join('\n') + '\n';
-}
+let cachedVisitorData = '';
 
-function setupCookies() {
-  const cookieEnv = process.env.YOUTUBE_COOKIES;
-  if (!cookieEnv) {
-    console.log('[startup] No YOUTUBE_COOKIES env var');
-    return false;
-  }
+async function getVisitorData() {
+  if (cachedVisitorData) return cachedVisitorData;
   try {
-    const cookieStr = cookieEnv.startsWith('ey') ? Buffer.from(cookieEnv, 'base64').toString('utf8') : cookieEnv;
-    const netscape = parseBrowserCookies(cookieStr);
-    if (netscape) {
-      fs.writeFileSync(COOKIES_PATH, netscape);
-      console.log('[startup] Cookies written to', COOKIES_PATH, '- entries:', netscape.split('\n').length - 1);
-      return true;
-    }
-  } catch (e) {
-    console.error('[startup] Cookie setup failed:', e.message);
+    const resp = await fetch('https://youtubei.googleapis.com/youtubei/v1/visitor_id', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'User-Agent': ANDROID_VR_UA },
+      body: JSON.stringify({ context: { client: { clientName: 'ANDROID_VR', clientVersion: '1.65.10' } } }),
+      signal: AbortSignal.timeout(5000),
+    });
+    const data = await resp.json();
+    cachedVisitorData = data?.responseContext?.visitorData || '';
+  } catch {}
+  return cachedVisitorData;
+}
+
+async function innertubeAudio(videoId) {
+  const visitorData = await getVisitorData();
+
+  const resp = await fetch(`https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_KEY}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': ANDROID_VR_UA,
+      ...(visitorData && { 'X-Goog-Visitor-Id': visitorData }),
+    },
+    body: JSON.stringify({
+      videoId,
+      context: { client: { ...INNERTUBE_CLIENT, ...(visitorData && { visitorData }) } },
+      contentCheckOk: true,
+      racyCheckOk: true,
+      params: 'CgIQBg==',
+    }),
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!resp.ok) throw new Error(`InnerTube HTTP ${resp.status}`);
+  const data = await resp.json();
+
+  const status = data.playabilityStatus?.status;
+  if (status !== 'OK') throw new Error(`Playability: ${status}`);
+
+  const formats = data.streamingData?.adaptiveFormats || [];
+
+  // Prefer itag 140 (128kbps AAC m4a), then best audio/mp4, then any audio
+  let best = formats.find((f) => f.itag === 140 && f.url);
+  if (!best) {
+    best = formats
+      .filter((f) => f.mimeType?.startsWith('audio/mp4') && f.url)
+      .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
   }
-  return false;
+  if (!best) {
+    best = formats
+      .filter((f) => f.mimeType?.startsWith('audio/') && f.url)
+      .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+  }
+  if (!best?.url) throw new Error('No audio format with URL');
+
+  return {
+    audioUrl: best.url,
+    title: data.videoDetails?.title || '',
+    duration: parseInt(data.videoDetails?.lengthSeconds || '0', 10),
+    author: data.videoDetails?.author || '',
+    thumbnail: data.videoDetails?.thumbnail?.thumbnails?.pop()?.url || '',
+  };
 }
 
-const hasCookies = setupCookies();
+// ---- stream URL cache (re-resolve before expiry) ----
+const streamCache = new Map(); // videoId -> { url, expires }
+const CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours (URLs valid ~5h)
 
-function ytdlpExtra() {
-  const args = ['--no-warnings', '--ignore-errors', '--extractor-args', 'youtube:player_client=mweb'];
-  if (hasCookies) args.push('--cookies', COOKIES_PATH);
-  return args;
+async function getStreamUrl(videoId) {
+  const cached = streamCache.get(videoId);
+  if (cached && cached.expires > Date.now()) return cached.url;
+
+  const result = await innertubeAudio(videoId);
+  streamCache.set(videoId, { url: result.audioUrl, expires: Date.now() + CACHE_TTL });
+  return result.audioUrl;
 }
 
-let ytdl = null;
-try {
-  ytdl = require('@distube/ytdl-core');
-  console.log('[startup] ytdl-core loaded');
-} catch (e) {
-  console.log('[startup] ytdl-core not available:', e.message?.substring(0, 100));
+// ---- proxy audio stream (handles Range for seeking) ----
+function proxyStream(audioUrl, req, res) {
+  return new Promise((resolve) => {
+    const headers = { 'User-Agent': ANDROID_VR_UA };
+    if (req.headers.range) headers.Range = req.headers.range;
+
+    const proxyReq = https.get(audioUrl, { headers, timeout: 30000 }, (proxyRes) => {
+      // Follow redirects (up to 3)
+      if (proxyRes.statusCode >= 300 && proxyRes.statusCode < 400 && proxyRes.headers.location) {
+        proxyRes.resume();
+        const redirectUrl = new URL(proxyRes.headers.location, audioUrl).href;
+        if (!res.headersSent) {
+          proxyStream(redirectUrl, req, res).then(resolve);
+        } else {
+          resolve();
+        }
+        return;
+      }
+
+      const respHeaders = {
+        'Content-Type': proxyRes.headers['content-type'] || 'audio/mp4',
+        'Accept-Ranges': proxyRes.headers['accept-ranges'] || 'bytes',
+        'Access-Control-Allow-Origin': '*',
+      };
+      if (proxyRes.headers['content-length']) respHeaders['Content-Length'] = proxyRes.headers['content-length'];
+      if (proxyRes.headers['content-range']) respHeaders['Content-Range'] = proxyRes.headers['content-range'];
+
+      res.writeHead(proxyRes.statusCode || 200, respHeaders);
+      proxyRes.pipe(res);
+      proxyRes.on('end', () => resolve());
+      proxyRes.on('error', () => { res.end(); resolve(); });
+    });
+
+    proxyReq.on('error', () => {
+      if (!res.headersSent) res.status(502).json({ error: 'Stream proxy error' });
+      resolve();
+    });
+    proxyReq.on('timeout', () => { proxyReq.destroy(); resolve(); });
+
+    req.on('close', () => { proxyReq.destroy(); resolve(); });
+  });
 }
+
+// ---- routes ----
 
 app.get('/', (req, res) => {
-  res.json({ status: 'ok', service: 'muzix-ytdl-backend', ytdlp: YTDLP, ytdlCore: !!ytdl, cookies: hasCookies });
+  res.json({ status: 'ok', service: 'muzix-backend', innertube: true, ytdlpSearch: YTDLP });
 });
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Search YouTube
+// Search YouTube (yt-dlp flat-playlist — no video access needed)
 app.get('/api/search', async (req, res) => {
   try {
     const query = req.query.q;
@@ -100,12 +182,10 @@ app.get('/api/search', async (req, res) => {
 
     const { stdout } = await execFileAsync(YTDLP, [
       `ytsearch${limit}:${query}`,
-      '--flat-playlist', '--dump-json',
-      ...ytdlpExtra(),
+      '--flat-playlist', '--dump-json', '--no-warnings', '--ignore-errors',
     ], { timeout: 30000, maxBuffer: 10 * 1024 * 1024 });
 
-    const lines = stdout.trim().split('\n').filter(Boolean);
-    const results = lines.map((line) => {
+    const results = stdout.trim().split('\n').filter(Boolean).map((line) => {
       try {
         const item = JSON.parse(line);
         return {
@@ -127,156 +207,68 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
-// Get audio URL
+// Get audio info + stream URL (InnerTube ANDROID_VR — no cookies, no bot detection)
 app.get('/api/audio', async (req, res) => {
   try {
-    const url = req.query.url;
-    if (!url) return res.status(400).json({ error: 'Missing url parameter' });
+    const url = req.query.url || '';
+    const videoId = url.match(/(?:youtu\.be\/|v\/|embed\/|watch\?v=|watch\?.+&v=)([^#&?]{11})/)?.[1]
+      || (/^[a-zA-Z0-9_-]{11}$/.test(url) ? url : null);
 
-    const ytMatch = url.match(/(?:youtu\.be\/|v\/|embed\/|watch\?v=|watch\?.+&v=)([^#&?]{11})/);
-    if (!ytMatch) return res.status(400).json({ error: 'Invalid YouTube URL' });
+    if (!videoId) return res.status(400).json({ error: 'Invalid YouTube URL' });
 
-    console.log('[audio] Getting URL for:', ytMatch[1]);
+    console.log('[audio] Resolving:', videoId);
+    const result = await innertubeAudio(videoId);
+    console.log('[audio] OK:', result.title);
 
-    // Try yt-dlp with cookies
-    try {
-      const { stdout } = await execFileAsync(YTDLP, [
-        url,
-        '-f', 'bestaudio[ext=m4a]/bestaudio/best', '-g',
-        ...ytdlpExtra(),
-      ], { timeout: 45000, maxBuffer: 5 * 1024 * 1024 });
-
-      const streamUrl = stdout.trim().split('\n')[0];
-      if (streamUrl && streamUrl.startsWith('http')) {
-        let title = 'audio';
-        try {
-          const { stdout: infoOut } = await execFileAsync(YTDLP, [
-            url,
-            '--dump-json', '--no-download',
-            ...ytdlpExtra(),
-          ], { timeout: 15000 });
-          title = JSON.parse(infoOut).title || 'audio';
-        } catch {}
-        console.log('[audio] yt-dlp success:', title);
-        return res.json({ audioUrl: streamUrl, title });
-      }
-    } catch (e) {
-      console.log('[audio] yt-dlp failed:', e.message?.substring(0, 200));
-    }
-
-    // Try ytdl-core
-    if (ytdl) {
-      try {
-        const info = await ytdl.getInfo(url);
-        const format = ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly' });
-        if (format && format.url) {
-          console.log('[audio] ytdl-core success:', info.videoDetails.title);
-          return res.json({ audioUrl: format.url, title: info.videoDetails.title || 'audio' });
-        }
-      } catch (e) {
-        console.log('[audio] ytdl-core failed:', e.message?.substring(0, 200));
-      }
-    }
-
-    res.status(404).json({ error: 'No audio source available' });
+    res.json({
+      audioUrl: result.audioUrl,
+      streamUrl: `/api/stream?v=${videoId}`,
+      videoId,
+      title: result.title,
+      duration: result.duration,
+      author: result.author,
+      thumbnail: result.thumbnail,
+    });
   } catch (e) {
     console.error('[audio] Error:', e.message);
-    res.status(500).json({ error: 'Failed to get audio URL' });
+    res.status(404).json({ error: e.message || 'No audio source' });
   }
 });
 
-// Debug: show yt-dlp output
+// Stream proxy — never expires, re-resolves internally
+app.get('/api/stream', async (req, res) => {
+  try {
+    const videoId = req.query.v;
+    if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+      return res.status(400).json({ error: 'Invalid video ID' });
+    }
+
+    let audioUrl;
+    try {
+      audioUrl = await getStreamUrl(videoId);
+    } catch (e) {
+      // Clear cache and retry once (stale visitor data)
+      streamCache.delete(videoId);
+      cachedVisitorData = '';
+      audioUrl = await getStreamUrl(videoId);
+    }
+
+    await proxyStream(audioUrl, req, res);
+  } catch (e) {
+    console.error('[stream] Error:', e.message);
+    if (!res.headersSent) res.status(502).json({ error: 'Stream failed' });
+  }
+});
+
+// Debug
 app.get('/api/debug', async (req, res) => {
   try {
-    // Show cookie file first few lines
-    let cookiePreview = 'no cookies file';
-    try {
-      const content = fs.readFileSync(COOKIES_PATH, 'utf8');
-      const lines = content.split('\n');
-      cookiePreview = `Total lines: ${lines.length}. First 3: ${lines.slice(0, 3).join(' | ')}`;
-    } catch (e) {
-      cookiePreview = `Error reading cookies: ${e.message}`;
-    }
-
-    // Get yt-dlp version
-    let version = 'unknown';
-    try {
-      const { stdout } = await execFileAsync(YTDLP, ['--version'], { timeout: 5000 });
-      version = stdout.trim();
-    } catch {}
-
-    const url = req.query.url || 'https://www.youtube.com/watch?v=60ItHLz5WEA';
-    const args = [url, '-f', 'bestaudio[ext=m4a]/bestaudio/best', '-g', '--verbose', ...ytdlpExtra()];
-    console.log('[debug] Running:', YTDLP, args.join(' '));
-    const { stdout, stderr } = await execFileAsync(YTDLP, args, { timeout: 45000, maxBuffer: 5 * 1024 * 1024 });
-    res.json({ version, cookiePreview, stdout: stdout.substring(0, 500), stderr: stderr.substring(0, 2000) });
+    const videoId = req.query.v || '60ItHLz5WEA';
+    const t0 = Date.now();
+    const result = await innertubeAudio(videoId);
+    res.json({ ...result, audioUrl: result.audioUrl.substring(0, 200), elapsedMs: Date.now() - t0 });
   } catch (e) {
-    res.json({ error: e.message?.substring(0, 500), stdout: e.stdout?.substring(0, 500), stderr: e.stderr?.substring(0, 2000) });
-  }
-});
-
-// Stream audio
-app.get('/api/convert', async (req, res) => {
-  try {
-    const url = req.query.url;
-    if (!url) return res.status(400).json({ error: 'Missing url parameter' });
-
-    const ytMatch = url.match(/(?:youtu\.be\/|v\/|embed\/|watch\?v=|watch\?.+&v=)([^#&?]{11})/);
-    if (!ytMatch) return res.status(400).json({ error: 'Invalid YouTube URL' });
-
-    console.log('[convert] Converting:', ytMatch[1]);
-
-    let audioUrl = null;
-    let title = 'audio';
-
-    try {
-      const { stdout } = await execFileAsync(YTDLP, [
-        url,
-        '-f', 'bestaudio[ext=m4a]/bestaudio/best', '-g',
-        ...ytdlpExtra(),
-      ], { timeout: 45000 });
-      const streamUrl = stdout.trim().split('\n')[0];
-      if (streamUrl && streamUrl.startsWith('http')) audioUrl = streamUrl;
-    } catch {}
-
-    if (!audioUrl && ytdl) {
-      try {
-        const info = await ytdl.getInfo(url);
-        const format = ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly' });
-        if (format && format.url) { audioUrl = format.url; title = info.videoDetails.title || 'audio'; }
-      } catch {}
-    }
-
-    if (!audioUrl) return res.status(404).json({ error: 'No audio source' });
-
-    res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Content-Disposition', `inline; filename="${title}.mp3"`);
-
-    const proxyReq = https.get(audioUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      timeout: 60000,
-    }, (proxyRes) => {
-      if (proxyRes.statusCode >= 300 && proxyRes.statusCode < 400 && proxyRes.headers.location) {
-        proxyRes.resume();
-        https.get(proxyRes.headers.location, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (redirectRes) => {
-          res.setHeader('Content-Type', redirectRes.headers['content-type'] || 'audio/mpeg');
-          redirectRes.pipe(res);
-        }).on('error', () => { if (!res.headersSent) res.status(500).json({ error: 'Stream failed' }); });
-        return;
-      }
-      res.setHeader('Content-Type', proxyRes.headers['content-type'] || 'audio/mpeg');
-      proxyRes.pipe(res);
-    });
-
-    proxyReq.on('error', (err) => {
-      console.error('[convert] Proxy error:', err.message);
-      if (!res.headersSent) res.status(500).json({ error: 'Stream failed' });
-    });
-
-    req.on('close', () => { proxyReq.destroy(); });
-  } catch (e) {
-    console.error('[convert] Error:', e.message);
-    if (!res.headersSent) res.status(500).json({ error: 'Conversion failed' });
+    res.json({ error: e.message });
   }
 });
 
